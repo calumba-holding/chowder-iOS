@@ -9,7 +9,13 @@ struct ChatHeaderView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                if let uiImage = UIImage(named: "BotAvatar") {
+                if let customAvatar = LocalStorage.loadAvatar() {
+                    Image(uiImage: customAvatar)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 32, height: 32)
+                        .clipShape(Circle())
+                } else if let uiImage = UIImage(named: "BotAvatar") {
                     Image(uiImage: uiImage)
                         .resizable()
                         .scaledToFill()
@@ -57,8 +63,14 @@ struct ChatHeaderView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
-            Divider()
+            Rectangle()
+                .fill(Color(.systemGray5))
+                .frame(height: 0.5)
         }
-        .background(.thickMaterial)
+        .background {
+            Color.white.opacity(0.75)
+                .background(.thinMaterial)
+                .ignoresSafeArea(edges: .top)
+        }
     }
 }

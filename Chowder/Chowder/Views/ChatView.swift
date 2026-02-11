@@ -2,23 +2,32 @@ import SwiftUI
 
 struct ChatView: View {
     @State private var viewModel = ChatViewModel()
-
     var body: some View {
         VStack(spacing: 0) {
             // Messages
             ScrollViewReader { proxy in
                 ScrollView {
                     // Spacer to push content below header
-                    Color.clear.frame(height: 56)
+                    Color.clear.frame(height: 72)
 
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(viewModel.messages) { message in
                             MessageBubbleView(message: message)
                                 .id(message.id)
                         }
+
+                        // Thinking shimmer — shown while the agent is working
+                        if let activity = viewModel.currentActivity,
+                           !activity.currentLabel.isEmpty {
+                            ThinkingShimmerView(label: activity.currentLabel) {
+                                viewModel.showActivityCard = true
+                            }
+                            .id("shimmer")
+                            .transition(.opacity)
+                        }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 16)
                 }
                 .onChange(of: viewModel.messages.count) {
                     if let last = viewModel.messages.last {
@@ -34,6 +43,15 @@ struct ChatView: View {
                         }
                     }
                 }
+                .onChange(of: viewModel.currentActivity?.currentLabel) {
+                    // Scroll to shimmer when it appears/updates
+                    if viewModel.currentActivity != nil {
+                        withAnimation {
+                            proxy.scrollTo("shimmer", anchor: .bottom)
+                        }
+                    }
+                }
+                .scrollDismissesKeyboard(.interactively)
             }
 
             // Input bar
@@ -53,7 +71,7 @@ struct ChatView: View {
                         .foregroundStyle(
                             viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading
                                 ? Color(.systemGray4)
-                                : Color(red: 219/255, green: 84/255, blue: 75/255)
+                                : Color.blue
                         )
                 }
                 .disabled(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading)
@@ -64,7 +82,7 @@ struct ChatView: View {
         }
         .overlay(alignment: .top) {
             ChatHeaderView(
-                botName: "Chowder",
+                botName: viewModel.botName,
                 isOnline: viewModel.isConnected,
                 onSettingsTapped: { viewModel.showSettings = true },
                 onDebugTapped: { viewModel.showDebugLog = true }
@@ -75,8 +93,19 @@ struct ChatView: View {
             viewModel.connect()
         }
         .sheet(isPresented: $viewModel.showSettings) {
-            SettingsView {
-                viewModel.reconnect()
+            SettingsView(
+                currentIdentity: viewModel.botIdentity,
+                currentProfile: viewModel.userProfile,
+                onSave: { identity, profile in
+                    viewModel.saveWorkspaceData(identity: identity, profile: profile)
+                },
+                onClearHistory: { viewModel.clearMessages() }
+            )
+        }
+        .sheet(isPresented: $viewModel.showActivityCard) {
+            if let activity = viewModel.currentActivity ?? viewModel.lastCompletedActivity {
+                AgentActivityCard(activity: activity)
+                    .presentationDetents([.medium, .large])
             }
         }
         .sheet(isPresented: $viewModel.showDebugLog) {
@@ -91,6 +120,7 @@ struct ChatView: View {
                     }
                     .padding(12)
                 }
+                .onAppear { viewModel.flushLogBuffer() }
                 .navigationTitle("Debug Log")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

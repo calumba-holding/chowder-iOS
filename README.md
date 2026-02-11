@@ -2,6 +2,19 @@
 
 Chowder is a native iOS chat client that connects to an [OpenClaw](https://docs.openclaw.ai) gateway over WebSocket. It lets you talk to your personal AI assistant from your iPhone or iPad, using the same sessions and routing as WhatsApp, Telegram, Discord, and other OpenClaw channels.
 
+## Features
+
+- **Real-time chat** with streaming AI responses via WebSocket
+- **Persistent chat history** stored locally (survives app kill/relaunch)
+- **Agent identity sync** -- dynamically mirrors the bot's IDENTITY.md (name, creature, vibe, emoji) and USER.md (what the bot knows about you) from the OpenClaw workspace
+- **"Thinking..." shimmer** -- shows an animated status line while the agent is working, with a minimum display duration so it doesn't flash on fast responses
+- **Verbose tool activity** -- automatically enables `/verbose on` so tool calls (read, write, bash, etc.) update the shimmer with real-time labels like "Reading IDENTITY.md..."
+- **Activity detail card** -- tap the shimmer to see the full list of thinking steps and tool calls the agent performed
+- **Custom agent avatar** -- pick a profile photo for the agent from your photo library
+- **Settings sync** -- edit the bot's identity or your user profile in Settings and the changes are written back to the OpenClaw workspace files
+- **Automatic reconnection** with 3-second backoff after network interruptions
+- **Debug log** -- tap the header to view raw WebSocket traffic for troubleshooting
+
 ## Prerequisites
 
 - **Mac mini (or any macOS/Linux host)** running OpenClaw gateway
@@ -23,15 +36,26 @@ iPhone (Chowder)                Mac mini (Gateway)
       |  hello-ok (protocol 3)       |
       |<------------------------------|
       |                               |
-      |  chat.send (message)          |  --> Pi agent (RPC)
+      |  /verbose on (invisible)      |  --> enables tool summaries
       |------------------------------>|
-      |  agent events (text deltas)   |
+      |  sync: read IDENTITY/USER.md  |  --> agent reads workspace files
+      |------------------------------>|
+      |  chat.final (sync response)   |  --> parsed into BotIdentity/UserProfile
       |<------------------------------|
-      |  chat final                   |
+      |                               |
+      |  chat.send (user message)     |  --> Pi agent (RPC)
+      |------------------------------>|
+      |  chat.delta (tool summaries)  |  --> shimmer: "Reading IDENTITY.md..."
+      |<------------------------------|
+      |  agent/assistant (text deltas)|  --> streamed into chat bubble
+      |<------------------------------|
+      |  agent/lifecycle (end)        |  --> message complete
+      |<------------------------------|
+      |  chat.final (full response)   |
       |<------------------------------|
 ```
 
-Chowder connects as a `cli` mode operator client using the OpenClaw Gateway Protocol v3. It authenticates with a shared gateway token and streams AI responses via WebSocket events.
+Chowder connects as an `openclaw-ios` / `ui` mode operator client using the OpenClaw Gateway Protocol v3. On connect, it silently enables verbose mode and syncs the agent's workspace files to populate the header name and cached identity/profile data.
 
 ## Setup Guide
 
@@ -132,11 +156,21 @@ Chowder will connect to the gateway, complete the WebSocket handshake, and show 
 2. The gateway sends a `connect.challenge` with a nonce
 3. Chowder responds with a `connect` request containing:
    - Protocol version (v3)
-   - Client identity (`cli` / `cli` mode)
+   - Client identity (`openclaw-ios` / `ui` mode)
    - Auth token
    - Operator role and scopes
 4. The gateway validates and returns `hello-ok`
-5. The connection is authenticated and ready for chat
+5. Chowder silently sends `/verbose on` to enable tool call summaries
+6. Chowder sends an invisible sync request asking the bot to read IDENTITY.md and USER.md
+7. The response is parsed to populate `BotIdentity` (header name, creature, vibe) and `UserProfile`
+
+### Workspace Sync
+
+Chowder dynamically mirrors the bot's workspace files -- it never hardcodes identity values. On connect, it asks the bot to read `IDENTITY.md` and `USER.md` and return their contents in a delimiter-based format. The response is parsed into structured Swift models (`BotIdentity`, `UserProfile`) and cached locally via `LocalStorage`. When the user edits these in Settings, the changes are written back to the workspace via a chat-driven write request.
+
+### Verbose Tool Activity
+
+With `/verbose on`, the gateway sends tool call summaries as separate `chat.delta` events (e.g., "📄 read: IDENTITY.md"). Chowder detects these by pattern-matching known tool names and routes them to the shimmer display instead of the chat. This gives users real-time visibility into what the agent is doing.
 
 ### Sending Messages
 
@@ -144,6 +178,7 @@ Messages are sent as `chat.send` requests with an idempotency key. The gateway a
 
 - `agent` / `stream: "assistant"` -- text deltas (incremental tokens)
 - `agent` / `stream: "lifecycle"` -- start/end of agent run
+- `chat` / `state: "delta"` -- verbose tool summaries (parsed for shimmer)
 - `chat` / `state: "final"` -- complete message with full text
 
 ### Reconnection
@@ -170,6 +205,11 @@ Chowder automatically reconnects after network interruptions with a 3-second bac
 - Ensure an API key or OAuth token is configured for your model provider
 - Try sending a message from the CLI to verify the agent works: `openclaw agent --message "hello"`
 
+### Header shows "Chowder" instead of the bot's name
+
+- The bot's IDENTITY.md may be empty. Tell the bot to fill it in: "Set your name to OddJob in IDENTITY.md"
+- Check the debug log for `Synced IDENTITY.md` or `Sync response could not be parsed` messages
+
 ### Gateway not reachable over Tailscale
 
 - Ensure `gateway.bind` is set to `"tailnet"` (not `"loopback"`)
@@ -180,28 +220,35 @@ Chowder automatically reconnects after network interruptions with a 3-second bac
 
 ```
 Chowder/
-  ChowderApp.swift          -- App entry point
+  ChowderApp.swift              -- App entry point
   Models/
-    ConnectionConfig.swift   -- Gateway URL, token, session key storage
-    Message.swift            -- Chat message model (user/assistant)
+    AgentActivity.swift          -- Thinking/tool step tracking for shimmer
+    BotIdentity.swift            -- Parsed IDENTITY.md model + markdown serialization
+    ConnectionConfig.swift       -- Gateway URL, token, session key storage
+    Message.swift                -- Chat message model (Codable, persisted)
+    UserProfile.swift            -- Parsed USER.md model + markdown serialization
   Services/
-    ChatService.swift        -- WebSocket connection + OpenClaw protocol
-    KeychainService.swift    -- Secure token storage
+    ChatService.swift            -- WebSocket connection, protocol handling, verbose tool parsing
+    KeychainService.swift        -- Secure token storage
+    LocalStorage.swift           -- File-based persistence (messages, avatar, identity, profile)
   ViewModels/
-    ChatViewModel.swift      -- Chat state, message list, delegates
+    ChatViewModel.swift          -- Chat state, sync orchestration, shimmer logic
   Views/
-    ChatView.swift           -- Main chat screen
-    ChatHeaderView.swift     -- Header with online/offline status
-    MessageBubbleView.swift  -- Message bubble UI
-    SettingsView.swift       -- Gateway URL, token, session config
+    AgentActivityCard.swift      -- Detail card showing all thinking/tool steps
+    ChatView.swift               -- Main chat screen with shimmer + activity card
+    ChatHeaderView.swift         -- Header with dynamic bot name + online/offline
+    MessageBubbleView.swift      -- Message bubble with markdown rendering
+    SettingsView.swift           -- Gateway config, identity/profile editing, avatar picker
+    ThinkingShimmerView.swift    -- Animated "Thinking..." / tool status shimmer line
 ```
 
 ## OpenClaw Protocol Reference
 
 - [Gateway Protocol](https://docs.openclaw.ai/gateway/protocol) -- WebSocket framing and handshake
+- [Thinking Levels](https://docs.openclaw.ai/tools/thinking) -- `/verbose`, `/think`, `/reasoning` directives
+- [Agent Loop](https://docs.openclaw.ai/concepts/agent-loop) -- How the agent processes messages
 - [Tailscale Setup](https://docs.openclaw.ai/gateway/tailscale) -- Network access via Tailscale
 - [Configuration](https://docs.openclaw.ai/gateway/configuration) -- All gateway config keys
-- [Troubleshooting](https://docs.openclaw.ai/gateway/troubleshooting) -- Gateway diagnostics
 
 ## License
 

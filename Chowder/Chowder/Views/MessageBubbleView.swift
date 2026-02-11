@@ -9,16 +9,24 @@ struct MessageBubbleView: View {
                 Spacer(minLength: 60)
             }
 
-            Text(message.content)
-                .font(.system(size: 17, weight: .regular, design: .default))
-                .foregroundStyle(message.role == .user ? .white : .black)
-                .padding(message.role == .user ? 12 : 0)
-                .background(
-                    message.role == .user
-                        ? RoundedRectangle(cornerRadius: 18)
-                            .fill(Color(red: 219/255, green: 84/255, blue: 75/255))
-                        : nil
-                )
+            Group {
+                if message.role == .assistant {
+                    MarkdownContentView(message.content, foregroundColor: Color(.label))
+                        .font(.system(size: 17))
+                        .textSelection(.enabled)
+                } else {
+                    Text(message.content)
+                        .font(.system(size: 17, weight: .regular, design: .default))
+                        .foregroundStyle(.white)
+                }
+            }
+            .padding(message.role == .user ? 12 : 0)
+            .background(
+                message.role == .user
+                    ? RoundedRectangle(cornerRadius: 18)
+                        .fill(Color.blue)
+                    : nil
+            )
 
             if message.role == .assistant {
                 Spacer(minLength: 60)

@@ -8,6 +8,11 @@ protocol ChatServiceDelegate: AnyObject {
     func chatServiceDidFinishMessage()
     func chatServiceDidReceiveError(_ error: Error)
     func chatServiceDidLog(_ message: String)
+    func chatServiceDidReceiveThinkingDelta(_ text: String)
+    func chatServiceDidReceiveToolEvent(name: String, path: String?)
+    func chatServiceDidUpdateBotIdentity(_ identity: BotIdentity)
+    func chatServiceDidUpdateUserProfile(_ profile: UserProfile)
+    func chatServiceDidReceiveFinalContent(_ text: String)
 }
 
 final class ChatService: NSObject {
@@ -58,6 +63,35 @@ final class ChatService: NSObject {
         print("🔌 \(msg)")
         DispatchQueue.main.async { [weak self] in
             self?.delegate?.chatServiceDidLog(msg)
+        }
+    }
+
+    /// Produce a one-line summary for incoming WebSocket frames instead of dumping raw JSON.
+    /// Example: "[RECV] event agent/assistant seq=12" or "[RECV] res ok id=req-1"
+    private func logCompactRecv(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            log("[RECV] (unparseable \(text.count) chars)")
+            return
+        }
+        let frameType = json["type"] as? String ?? "?"
+        switch frameType {
+        case "event":
+            let event = json["event"] as? String ?? "?"
+            let payload = json["payload"] as? [String: Any]
+            let stream = (payload?["stream"] as? String).map { "/\($0)" } ?? ""
+            let state = (payload?["state"] as? String).map { "/\($0)" } ?? ""
+            let seq = payload?["seq"] as? Int
+            let seqStr = seq.map { " seq=\($0)" } ?? ""
+            // Skip tick/health entirely — pure noise
+            if event == "tick" || event == "health" { return }
+            log("[RECV] event \(event)\(stream)\(state)\(seqStr)")
+        case "res":
+            let id = json["id"] as? String ?? "?"
+            let ok = json["ok"] as? Bool ?? false
+            log("[RECV] res \(ok ? "ok" : "err") id=\(id)")
+        default:
+            log("[RECV] \(frameType) (\(text.count) chars)")
         }
     }
 
@@ -171,10 +205,10 @@ final class ChatService: NSObject {
                 "minProtocol": 3,
                 "maxProtocol": 3,
                 "client": [
-                    "id": "cli",
+                    "id": "openclaw-ios",
                     "version": "1.0.0",
                     "platform": "ios",
-                    "mode": "cli"
+                    "mode": "ui"
                 ],
                 "role": "operator",
                 "scopes": ["operator.read", "operator.write"],
@@ -212,7 +246,8 @@ final class ChatService: NSObject {
             case .success(let message):
                 switch message {
                 case .string(let text):
-                    self.log("[RECV] \(String(text.prefix(400)))")
+                    // Compact log: just event type + stream (full payload available in Xcode console)
+                    self.logCompactRecv(text)
                     self.handleIncomingMessage(text)
                 case .data(let data):
                     self.log("[RECV] Data frame (\(data.count) bytes)")
@@ -286,7 +321,25 @@ final class ChatService: NSObject {
             return
         }
 
+        // Filter session-scoped events BEFORE dispatching to main — the gateway
+        // broadcasts to ALL connected WebSocket clients, so skip events whose
+        // sessionKey doesn't match ours. This avoids unnecessary main-thread work.
+        let eventSessionKey = payload?["sessionKey"] as? String
+        if (event == "agent" || event == "chat"),
+           let eventSessionKey,
+           eventSessionKey != self.sessionKey {
+            // This event belongs to a different session — ignore it silently.
+            return
+        }
+
+        // Skip periodic keepalive and health events before touching the main thread.
+        if event == "tick" || event == "health" {
+            return
+        }
+
         DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
             switch event {
 
             // ── Agent streaming events (primary source for text deltas) ──
@@ -299,13 +352,54 @@ final class ChatService: NSObject {
                 case "assistant":
                     // Use data.delta (incremental) — NOT data.text (cumulative)
                     if let delta = agentData?["delta"] as? String, !delta.isEmpty {
-                        self?.delegate?.chatServiceDidReceiveDelta(delta)
+                        self.delegate?.chatServiceDidReceiveDelta(delta)
                     }
+
+                case "thinking":
+                    if let delta = agentData?["delta"] as? String, !delta.isEmpty {
+                        self.delegate?.chatServiceDidReceiveThinkingDelta(delta)
+                    }
+
+                case "tool":
+                    // Log full payload for debugging the exact structure
+                    self.log("[HANDLE] tool event data keys: \(Array((agentData ?? [:]).keys))")
+
+                    // Try multiple possible field names for tool name and args
+                    let toolName = agentData?["name"] as? String
+                                ?? agentData?["toolName"] as? String
+                                ?? agentData?["tool"] as? String
+                                ?? "tool"
+                    let args = agentData?["args"] as? [String: Any]
+                             ?? agentData?["params"] as? [String: Any]
+                             ?? agentData?["input"] as? [String: Any]
+                    let path = args?["path"] as? String
+
+                    // Notify delegate about tool usage (for shimmer display)
+                    self.delegate?.chatServiceDidReceiveToolEvent(
+                        name: toolName,
+                        path: path
+                    )
+
+                    // Detect writes to identity/user files (for workspace sync)
+                    if toolName == "write",
+                       let filePath = path,
+                       let content = args?["content"] as? String {
+                        if filePath.hasSuffix("IDENTITY.md") {
+                            let identity = BotIdentity.from(markdown: content)
+                            self.log("[SYNC] Detected write to IDENTITY.md — name=\(identity.name)")
+                            self.delegate?.chatServiceDidUpdateBotIdentity(identity)
+                        } else if filePath.hasSuffix("USER.md") {
+                            let profile = UserProfile.from(markdown: content)
+                            self.log("[SYNC] Detected write to USER.md — name=\(profile.name)")
+                            self.delegate?.chatServiceDidUpdateUserProfile(profile)
+                        }
+                    }
+
                 case "lifecycle":
                     let phase = agentData?["phase"] as? String
                     if phase == "end" || phase == "done" {
-                        self?.log("[HANDLE] ✅ agent lifecycle: \(phase ?? "")")
-                        self?.delegate?.chatServiceDidFinishMessage()
+                        self.log("[HANDLE] ✅ agent lifecycle: \(phase ?? "")")
+                        self.delegate?.chatServiceDidFinishMessage()
                     }
                 default:
                     break
@@ -316,30 +410,49 @@ final class ChatService: NSObject {
                 let state = payload?["state"] as? String
                 switch state {
                 case "delta":
-                    break // Ignore — we use agent "assistant" deltas to avoid double delivery
+                    // Check if this delta contains a verbose tool summary
+                    // (e.g. "📄 read: IDENTITY.md" sent by /verbose on).
+                    // Tool summaries come as separate chat deltas, not agent deltas.
+                    if let message = payload?["message"] as? [String: Any],
+                       let text = self.extractText(from: message),
+                       !text.isEmpty {
+                        let parsed = Self.parseVerboseToolSummary(text)
+                        if let (toolName, toolPath) = parsed {
+                            self.log("[HANDLE] verbose tool: \(toolName) \(toolPath ?? "")")
+                            self.delegate?.chatServiceDidReceiveToolEvent(name: toolName, path: toolPath)
+                        }
+                        // Don't deliver as a regular delta — agent/assistant handles that
+                    }
                 case "final":
-                    break // Ignore — we use agent lifecycle "end" instead
+                    // Extract full message text and deliver via delegate (used by sync session)
+                    let message = payload?["message"] as? [String: Any]
+                    self.log("[HANDLE] chat.final — message keys: \(Array((message ?? [:]).keys))")
+                    if let message,
+                       let fullText = self.extractText(from: message),
+                       !fullText.isEmpty {
+                        self.log("[HANDLE] chat.final — extracted \(fullText.count) chars: \(String(fullText.prefix(120)))...")
+                        self.delegate?.chatServiceDidReceiveFinalContent(fullText)
+                    } else {
+                        self.log("[HANDLE] chat.final — ⚠️ could not extract text from message")
+                    }
                 case "aborted":
-                    self?.log("[HANDLE] ⚠️ chat aborted")
-                    self?.delegate?.chatServiceDidFinishMessage()
+                    self.log("[HANDLE] ⚠️ chat aborted")
+                    self.delegate?.chatServiceDidFinishMessage()
                 case "error":
                     let msg = payload?["errorMessage"] as? String ?? "Chat error"
-                    self?.log("[HANDLE] ❌ Chat error: \(msg)")
-                    self?.delegate?.chatServiceDidReceiveError(ChatServiceError.gatewayError(msg))
+                    self.log("[HANDLE] ❌ Chat error: \(msg)")
+                    self.delegate?.chatServiceDidReceiveError(ChatServiceError.gatewayError(msg))
                 default:
                     break
                 }
 
             case "error":
                 let msg = payload?["message"] as? String ?? "Unknown gateway error"
-                self?.log("[HANDLE] ❌ Gateway error: \(msg)")
-                self?.delegate?.chatServiceDidReceiveError(ChatServiceError.gatewayError(msg))
-
-            case "tick", "health":
-                break // Ignore periodic keepalive and health events
+                self.log("[HANDLE] ❌ Gateway error: \(msg)")
+                self.delegate?.chatServiceDidReceiveError(ChatServiceError.gatewayError(msg))
 
             default:
-                self?.log("[HANDLE] Event: \(event)")
+                self.log("[HANDLE] Event: \(event)")
             }
         }
     }
@@ -357,6 +470,7 @@ final class ChatService: NSObject {
             if payloadType == "hello-ok" {
                 let proto = payload?["protocol"] as? Int ?? 0
                 log("[AUTH] ✅ hello-ok — protocol=\(proto) id=\(id)")
+
                 DispatchQueue.main.async { [weak self] in
                     self?.isConnected = true
                     self?.delegate?.chatServiceDidConnect()
@@ -402,6 +516,49 @@ final class ChatService: NSObject {
             }
         }
         return nil
+    }
+
+    // MARK: - Private: Verbose Tool Summary Parsing
+
+    /// Known tool names the agent can use (matched case-insensitively).
+    private static let knownTools: Set<String> = [
+        "read", "write", "edit", "apply_patch", "search",
+        "bash", "exec", "browser", "web", "canvas",
+        "llm_task", "agent_send", "sessions_list",
+        "sessions_read", "message"
+    ]
+
+    /// Try to parse a verbose tool summary like "📄 read: IDENTITY.md" or "🔧 bash: ls -la".
+    /// Returns (toolName, path/arg?) or nil if the text isn't a tool summary.
+    static func parseVerboseToolSummary(_ text: String) -> (String, String?)? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Verbose tool summaries follow the pattern: <emoji> <toolName>: <arg>
+        // The emoji is optional (1–2 Unicode scalars), then a known tool name, then ": ".
+        // Strategy: strip leading emoji characters, then look for "toolName: arg".
+        var working = trimmed
+
+        // Strip leading emoji (any character that is NOT alphanumeric or whitespace, up to 4 chars)
+        while let first = working.unicodeScalars.first,
+              !first.properties.isAlphabetic && !first.properties.isWhitespace,
+              working.count > 1 {
+            working = String(working.dropFirst())
+        }
+        working = working.trimmingCharacters(in: .whitespaces)
+
+        // Now expect "toolName:" or "toolName: arg"
+        guard let colonIndex = working.firstIndex(of: ":") else { return nil }
+        let toolName = working[working.startIndex..<colonIndex]
+            .trimmingCharacters(in: .whitespaces)
+            .lowercased()
+
+        guard knownTools.contains(toolName) else { return nil }
+
+        let arg = working[working.index(after: colonIndex)...]
+            .trimmingCharacters(in: .whitespaces)
+
+        return (toolName, arg.isEmpty ? nil : arg)
     }
 
     // MARK: - Private: Reconnect
@@ -464,6 +621,7 @@ extension ChatService: URLSessionWebSocketDelegate {
 
         completionHandler(.performDefaultHandling, nil)
     }
+
 }
 
 // MARK: - Errors
