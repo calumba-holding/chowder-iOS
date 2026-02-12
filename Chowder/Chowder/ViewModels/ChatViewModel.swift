@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @Observable
 final class ChatViewModel: ChatServiceDelegate {
@@ -34,6 +35,10 @@ final class ChatViewModel: ChatServiceDelegate {
     /// Minimum time (seconds) the shimmer should remain visible so it doesn't flash.
     private let shimmerMinDuration: TimeInterval = 0.8
     private var shimmerStartTime: Date?
+
+    /// Light haptic fired once when the assistant's response starts streaming.
+    @ObservationIgnored private let responseHaptic = UIImpactFeedbackGenerator(style: .light)
+    @ObservationIgnored private var hasPlayedResponseHaptic = false
 
     private var chatService: ChatService?
 
@@ -125,6 +130,9 @@ final class ChatViewModel: ChatServiceDelegate {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isLoading else { return }
 
+        hasPlayedResponseHaptic = false
+        responseHaptic.prepare()
+
         messages.append(Message(role: .user, content: text))
         inputText = ""
         isLoading = true
@@ -182,6 +190,12 @@ final class ChatViewModel: ChatServiceDelegate {
         guard let lastIndex = messages.indices.last,
               messages[lastIndex].role == .assistant else { return }
         messages[lastIndex].content += text
+
+        // Light haptic on the first streaming delta of a response
+        if !hasPlayedResponseHaptic {
+            hasPlayedResponseHaptic = true
+            responseHaptic.impactOccurred()
+        }
 
         // Hide the shimmer once text starts streaming — but respect minimum display time
         if currentActivity != nil, !(currentActivity?.currentLabel.isEmpty ?? true) {

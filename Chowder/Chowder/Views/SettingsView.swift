@@ -1,25 +1,545 @@
 import SwiftUI
 import PhotosUI
 
+// MARK: - Main Settings View
+
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
-    // Connection
-    @State private var gatewayURL: String = ""
-    @State private var token: String = ""
-    @State private var sessionKey: String = ""
+    var currentIdentity: BotIdentity = BotIdentity()
+    var currentProfile: UserProfile = UserProfile()
+    var isConnected: Bool = false
+    var onSave: ((BotIdentity, UserProfile) -> Void)?
+    var onSaveConnection: (() -> Void)?
+    var onClearHistory: (() -> Void)?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 12) {
+
+                    // MARK: - Agent Card
+
+                    NavigationLink {
+                        AgentDetailView(
+                            currentIdentity: currentIdentity,
+                            onSave: { identity in
+                                onSave?(identity, currentProfile)
+                            }
+                        )
+                    } label: {
+                        GlassCard {
+                            HStack(spacing: 12) {
+                                agentAvatar(size: 40)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(currentIdentity.name.isEmpty ? "Agent" : currentIdentity.name)
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.primary)
+
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(isConnected ? Color.green : Color.gray.opacity(0.5))
+                                            .frame(width: 6, height: 6)
+                                        Text(isConnected ? "Online" : "Offline")
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // MARK: - Mac Mini Card
+
+                    NavigationLink {
+                        ConnectionDetailView(
+                            onSave: {
+                                onSaveConnection?()
+                            }
+                        )
+                    } label: {
+                        GlassCard {
+                            HStack(spacing: 12) {
+                                GlassIcon(systemName: "macmini")
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Mac Mini")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.primary)
+
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(isConnected ? Color.green : Color.gray.opacity(0.5))
+                                            .frame(width: 6, height: 6)
+                                        Text(isConnected ? "Connected" : "Disconnected")
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // MARK: - User Card
+
+                    NavigationLink {
+                        UserDetailView(
+                            currentProfile: currentProfile,
+                            onSave: { profile in
+                                onSave?(currentIdentity, profile)
+                            }
+                        )
+                    } label: {
+                        GlassCard {
+                            HStack(spacing: 12) {
+                                Circle()
+                                    .fill(Color(.systemGray5))
+                                    .frame(width: 40, height: 40)
+                                    .overlay(
+                                        Text(String((currentProfile.name.isEmpty ? "U" : currentProfile.name).prefix(1)).uppercased())
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundStyle(.secondary)
+                                    )
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(currentProfile.name.isEmpty ? "User" : currentProfile.name)
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.primary)
+
+                                    Text("Primary User")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // MARK: - Passbook Section
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Passbook")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 4)
+                            .padding(.top, 8)
+
+                        GlassCard(padding: 4) {
+                            VStack(spacing: 0) {
+                                ForEach(Array(PassbookItem.allItems.enumerated()), id: \.element.id) { index, item in
+                                    PassbookRow(item: item)
+
+                                    if index < PassbookItem.allItems.count - 1 {
+                                        Divider()
+                                            .opacity(0.3)
+                                            .padding(.leading, 52)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // MARK: - Data Section
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Data")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 4)
+                            .padding(.top, 8)
+
+                        GlassCard {
+                            Button(role: .destructive) {
+                                onClearHistory?()
+                            } label: {
+                                HStack {
+                                    Text("Clear Chat History")
+                                        .font(.system(size: 16))
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    // MARK: - Agent Avatar Helper
+
+    @ViewBuilder
+    private func agentAvatar(size: CGFloat) -> some View {
+        if let customAvatar = LocalStorage.loadAvatar() {
+            Image(uiImage: customAvatar)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else if let uiImage = UIImage(named: "BotAvatar") {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            Circle()
+                .fill(Color(red: 219/255, green: 84/255, blue: 75/255))
+                .frame(width: size, height: size)
+                .overlay(
+                    Text(String((currentIdentity.name.isEmpty ? "A" : currentIdentity.name).prefix(1)).uppercased())
+                        .font(.system(size: size * 0.4, weight: .semibold))
+                        .foregroundStyle(.white)
+                )
+        }
+    }
+}
+
+// MARK: - Glass Card Container
+
+struct GlassCard<Content: View>: View {
+    var padding: CGFloat = 16
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(padding)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+    }
+}
+
+// MARK: - Glass Icon
+
+struct GlassIcon: View {
+    let systemName: String
+    var size: CGFloat = 40
+    var iconSize: CGFloat = 18
+
+    var body: some View {
+        Circle()
+            .fill(Color(.systemGray5))
+            .frame(width: size, height: size)
+            .overlay(
+                Image(systemName: systemName)
+                    .font(.system(size: iconSize))
+                    .foregroundStyle(.secondary)
+            )
+    }
+}
+
+// MARK: - Passbook Item Model
+
+struct PassbookItem: Identifiable {
+    let id = UUID()
+    let icon: String
+    let title: String
+
+    static let allItems: [PassbookItem] = [
+        PassbookItem(icon: "phone", title: "Phone Number"),
+        PassbookItem(icon: "envelope", title: "Email"),
+        PassbookItem(icon: "icloud", title: "iCloud"),
+        PassbookItem(icon: "wallet.pass", title: "Wallet"),
+        PassbookItem(icon: "airplane", title: "Travel"),
+        PassbookItem(icon: "car", title: "Car"),
+        PassbookItem(icon: "house", title: "Home"),
+    ]
+}
+
+// MARK: - Passbook Row
+
+struct PassbookRow: View {
+    let item: PassbookItem
+
+    var body: some View {
+        HStack(spacing: 12) {
+            GlassIcon(systemName: item.icon, size: 32, iconSize: 14)
+
+            Text(item.title)
+                .font(.system(size: 16))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Agent Detail View
+
+struct AgentDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var currentIdentity: BotIdentity = BotIdentity()
+    var onSave: ((BotIdentity) -> Void)?
 
     // Agent Avatar
     @State private var avatarItem: PhotosPickerItem?
     @State private var avatarImage: UIImage?
 
-    // Bot Identity (synced with IDENTITY.md)
+    // Bot Identity fields
     @State private var botName: String = ""
     @State private var botCreature: String = ""
     @State private var botVibe: String = ""
     @State private var botEmoji: String = ""
 
-    // User Profile (synced with USER.md)
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+
+                // Avatar section
+                VStack(spacing: 12) {
+                    if let avatarImage {
+                        Image(uiImage: avatarImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 88, height: 88)
+                            .clipShape(Circle())
+                    } else if let uiImage = UIImage(named: "BotAvatar") {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 88, height: 88)
+                            .clipShape(Circle())
+                    } else {
+                        Circle()
+                            .fill(Color(red: 219/255, green: 84/255, blue: 75/255))
+                            .frame(width: 88, height: 88)
+                            .overlay(
+                                Text(String((botName.isEmpty ? "A" : botName).prefix(1)).uppercased())
+                                    .font(.system(size: 34, weight: .semibold))
+                                    .foregroundStyle(.white)
+                            )
+                    }
+
+                    HStack(spacing: 16) {
+                        PhotosPicker(selection: $avatarItem, matching: .images) {
+                            Text("Choose Photo")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.blue)
+                        }
+
+                        if avatarImage != nil {
+                            Button("Remove", role: .destructive) {
+                                avatarImage = nil
+                                avatarItem = nil
+                                LocalStorage.deleteAvatar()
+                            }
+                            .font(.system(size: 14, weight: .medium))
+                        }
+                    }
+                }
+                .padding(.top, 12)
+
+                // Identity fields
+                GlassCard(padding: 0) {
+                    VStack(spacing: 0) {
+                        GlassTextField(label: "Name", text: $botName)
+                        GlassDivider()
+                        GlassTextField(label: "Creature", placeholder: "AI, robot, familiar...", text: $botCreature)
+                        GlassDivider()
+                        GlassTextField(label: "Vibe", placeholder: "warm, sharp, chaotic...", text: $botVibe)
+                        GlassDivider()
+                        GlassTextField(label: "Emoji", text: $botEmoji)
+                    }
+                }
+
+                Text("Synced with IDENTITY.md on the gateway.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+
+                // Save button
+                GlassSaveButton {
+                    if let avatarImage {
+                        LocalStorage.saveAvatar(avatarImage)
+                    }
+
+                    let identity = BotIdentity(
+                        name: botName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        creature: botCreature.trimmingCharacters(in: .whitespacesAndNewlines),
+                        vibe: botVibe.trimmingCharacters(in: .whitespacesAndNewlines),
+                        emoji: botEmoji.trimmingCharacters(in: .whitespacesAndNewlines),
+                        avatar: currentIdentity.avatar
+                    )
+                    onSave?(identity)
+                    dismiss()
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 32)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Agent")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: avatarItem) {
+            Task {
+                if let data = try? await avatarItem?.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data) {
+                    avatarImage = image
+                }
+            }
+        }
+        .onAppear {
+            avatarImage = LocalStorage.loadAvatar()
+            botName = currentIdentity.name
+            botCreature = currentIdentity.creature
+            botVibe = currentIdentity.vibe
+            botEmoji = currentIdentity.emoji
+        }
+    }
+}
+
+// MARK: - Connection Detail View
+
+struct ConnectionDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var onSave: (() -> Void)?
+
+    @State private var gatewayURL: String = ""
+    @State private var token: String = ""
+    @State private var sessionKey: String = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+
+                // Gateway
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Gateway")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 4)
+
+                    GlassCard(padding: 0) {
+                        GlassTextField(label: "URL", placeholder: "ws://100.x.y.z:18789", text: $gatewayURL)
+                            .textContentType(.URL)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                }
+
+                // Authentication
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Authentication")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 4)
+
+                    GlassCard(padding: 0) {
+                        HStack {
+                            Text("Token")
+                                .font(.system(size: 16))
+                                .foregroundStyle(.primary)
+                                .frame(width: 80, alignment: .leading)
+
+                            SecureField("Token", text: $token)
+                                .font(.system(size: 16))
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 13)
+                    }
+                }
+
+                // Session
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Session")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 4)
+
+                    GlassCard(padding: 0) {
+                        GlassTextField(label: "Key", placeholder: "agent:main:main", text: $sessionKey)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                }
+
+                // Save button
+                GlassSaveButton(
+                    disabled: gatewayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                              token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ) {
+                    var config = ConnectionConfig()
+                    config.gatewayURL = gatewayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                    config.token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+                    config.sessionKey = sessionKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onSave?()
+                    dismiss()
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 32)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Mac Mini")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            let config = ConnectionConfig()
+            gatewayURL = config.gatewayURL
+            token = config.token
+            sessionKey = config.sessionKey
+        }
+    }
+}
+
+// MARK: - User Detail View
+
+struct UserDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var currentProfile: UserProfile = UserProfile()
+    var onSave: ((UserProfile) -> Void)?
+
     @State private var userName: String = ""
     @State private var userCallName: String = ""
     @State private var userPronouns: String = ""
@@ -27,197 +547,170 @@ struct SettingsView: View {
     @State private var userNotes: String = ""
     @State private var userContext: String = ""
 
-    var currentIdentity: BotIdentity = BotIdentity()
-    var currentProfile: UserProfile = UserProfile()
-    var onSave: ((BotIdentity, UserProfile) -> Void)?
-    var onClearHistory: (() -> Void)?
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+
+                // User avatar
+                Circle()
+                    .fill(Color(.systemGray5))
+                    .frame(width: 88, height: 88)
+                    .overlay(
+                        Text(String((userName.isEmpty ? "U" : userName).prefix(1)).uppercased())
+                            .font(.system(size: 34, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    )
+                    .padding(.top, 12)
+
+                // Profile fields
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Profile")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 4)
+
+                    GlassCard(padding: 0) {
+                        VStack(spacing: 0) {
+                            GlassTextField(label: "Name", text: $userName)
+                                .textContentType(.name)
+                            GlassDivider()
+                            GlassTextField(label: "Call Name", placeholder: "What to call you", text: $userCallName)
+                            GlassDivider()
+                            GlassTextField(label: "Pronouns", text: $userPronouns)
+                            GlassDivider()
+                            GlassTextField(label: "Timezone", text: $userTimezone)
+                            GlassDivider()
+                            GlassMultilineField(label: "Notes", text: $userNotes)
+                        }
+                    }
+
+                    Text("Synced with USER.md on the gateway.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                }
+
+                // Context
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Context")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 4)
+
+                    GlassCard(padding: 0) {
+                        TextField("Context, preferences, interests...", text: $userContext, axis: .vertical)
+                            .lineLimit(3...8)
+                            .font(.system(size: 16))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 13)
+                    }
+
+                    Text("What do you care about? What projects are you working on? Build this over time.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                }
+
+                // Save button
+                GlassSaveButton {
+                    let profile = UserProfile(
+                        name: userName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        callName: userCallName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        pronouns: userPronouns.trimmingCharacters(in: .whitespacesAndNewlines),
+                        timezone: userTimezone.trimmingCharacters(in: .whitespacesAndNewlines),
+                        notes: userNotes.trimmingCharacters(in: .whitespacesAndNewlines),
+                        context: userContext.trimmingCharacters(in: .whitespacesAndNewlines)
+                    )
+                    onSave?(profile)
+                    dismiss()
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 32)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("User")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            userName = currentProfile.name
+            userCallName = currentProfile.callName
+            userPronouns = currentProfile.pronouns
+            userTimezone = currentProfile.timezone
+            userNotes = currentProfile.notes
+            userContext = currentProfile.context
+        }
+    }
+}
+
+// MARK: - Shared Glass Components
+
+struct GlassTextField: View {
+    let label: String
+    var placeholder: String = ""
+    @Binding var text: String
 
     var body: some View {
-        NavigationStack {
-            Form {
-                // MARK: - Connection
+        HStack {
+            Text(label)
+                .font(.system(size: 16))
+                .foregroundStyle(.primary)
+                .frame(width: 80, alignment: .leading)
 
-                Section("Gateway") {
-                    TextField("ws://100.x.y.z:18789", text: $gatewayURL)
-                        .textContentType(.URL)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                }
-
-                Section("Authentication") {
-                    SecureField("Token", text: $token)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                }
-
-                Section("Session") {
-                    TextField("agent:main:main", text: $sessionKey)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                }
-
-                // MARK: - Agent Identity (IDENTITY.md)
-
-                Section {
-                    TextField("Name", text: $botName)
-                    TextField("Creature (AI, robot, familiar...)", text: $botCreature)
-                    TextField("Vibe (warm, sharp, chaotic...)", text: $botVibe)
-                    TextField("Emoji", text: $botEmoji)
-                } header: {
-                    Text("Agent Identity")
-                } footer: {
-                    Text("Synced with IDENTITY.md on the gateway.")
-                }
-
-                // MARK: - Agent Avatar
-
-                Section("Agent Avatar") {
-                    HStack {
-                        if let avatarImage {
-                            Image(uiImage: avatarImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 56, height: 56)
-                                .clipShape(Circle())
-                        } else {
-                            Circle()
-                                .fill(Color(red: 219/255, green: 84/255, blue: 75/255))
-                                .frame(width: 56, height: 56)
-                                .overlay(
-                                    Image(systemName: "camera")
-                                        .foregroundStyle(.white)
-                                )
-                        }
-
-                        Spacer()
-
-                        VStack(spacing: 8) {
-                            PhotosPicker(selection: $avatarItem, matching: .images) {
-                                Text("Choose Photo")
-                            }
-
-                            if avatarImage != nil {
-                                Button("Remove", role: .destructive) {
-                                    avatarImage = nil
-                                    avatarItem = nil
-                                    LocalStorage.deleteAvatar()
-                                }
-                                .font(.caption)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                // MARK: - About You (USER.md)
-
-                Section {
-                    TextField("Name", text: $userName)
-                        .textContentType(.name)
-                    TextField("What to call you", text: $userCallName)
-                    TextField("Pronouns", text: $userPronouns)
-                    TextField("Timezone", text: $userTimezone)
-                    TextField("Notes", text: $userNotes, axis: .vertical)
-                        .lineLimit(2...4)
-                } header: {
-                    Text("About You")
-                } footer: {
-                    Text("Synced with USER.md on the gateway. OpenClaw uses this to personalize responses.")
-                }
-
-                Section {
-                    TextField("Context, preferences, interests...", text: $userContext, axis: .vertical)
-                        .lineLimit(3...8)
-                } header: {
-                    Text("Context")
-                } footer: {
-                    Text("What do you care about? What projects are you working on? Build this over time.")
-                }
-
-                // MARK: - Data
-
-                Section("Data") {
-                    Button("Clear Chat History", role: .destructive) {
-                        onClearHistory?()
-                    }
-                }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        // Save connection config
-                        var config = ConnectionConfig()
-                        config.gatewayURL = gatewayURL.trimmingCharacters(in: .whitespacesAndNewlines)
-                        config.token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-                        config.sessionKey = sessionKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                        // Save avatar locally
-                        if let avatarImage {
-                            LocalStorage.saveAvatar(avatarImage)
-                        }
-
-                        // Build updated identity and profile, write to gateway
-                        let identity = BotIdentity(
-                            name: botName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            creature: botCreature.trimmingCharacters(in: .whitespacesAndNewlines),
-                            vibe: botVibe.trimmingCharacters(in: .whitespacesAndNewlines),
-                            emoji: botEmoji.trimmingCharacters(in: .whitespacesAndNewlines),
-                            avatar: currentIdentity.avatar  // preserve existing avatar path
-                        )
-
-                        let profile = UserProfile(
-                            name: userName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            callName: userCallName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            pronouns: userPronouns.trimmingCharacters(in: .whitespacesAndNewlines),
-                            timezone: userTimezone.trimmingCharacters(in: .whitespacesAndNewlines),
-                            notes: userNotes.trimmingCharacters(in: .whitespacesAndNewlines),
-                            context: userContext.trimmingCharacters(in: .whitespacesAndNewlines)
-                        )
-
-                        onSave?(identity, profile)
-                        dismiss()
-                    }
-                    .disabled(gatewayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                              token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-            .onChange(of: avatarItem) {
-                Task {
-                    if let data = try? await avatarItem?.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        avatarImage = image
-                    }
-                }
-            }
-            .onAppear {
-                // Load connection config
-                let config = ConnectionConfig()
-                gatewayURL = config.gatewayURL
-                token = config.token
-                sessionKey = config.sessionKey
-
-                // Load avatar
-                avatarImage = LocalStorage.loadAvatar()
-
-                // Load bot identity (from gateway-synced cache)
-                botName = currentIdentity.name
-                botCreature = currentIdentity.creature
-                botVibe = currentIdentity.vibe
-                botEmoji = currentIdentity.emoji
-
-                // Load user profile (from gateway-synced cache)
-                userName = currentProfile.name
-                userCallName = currentProfile.callName
-                userPronouns = currentProfile.pronouns
-                userTimezone = currentProfile.timezone
-                userNotes = currentProfile.notes
-                userContext = currentProfile.context
-            }
+            TextField(placeholder.isEmpty ? label : placeholder, text: $text)
+                .font(.system(size: 16))
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+    }
+}
+
+struct GlassMultilineField: View {
+    let label: String
+    @Binding var text: String
+
+    var body: some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .font(.system(size: 16))
+                .foregroundStyle(.primary)
+                .frame(width: 80, alignment: .leading)
+                .padding(.top, 2)
+
+            TextField(label, text: $text, axis: .vertical)
+                .lineLimit(2...4)
+                .font(.system(size: 16))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+    }
+}
+
+struct GlassDivider: View {
+    var body: some View {
+        Divider()
+            .opacity(0.3)
+            .padding(.leading, 16)
+    }
+}
+
+struct GlassSaveButton: View {
+    var disabled: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text("Save")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .foregroundStyle(disabled ? Color.blue.opacity(0.4) : .blue)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(.secondarySystemGroupedBackground))
+                )
+        }
+        .disabled(disabled)
     }
 }

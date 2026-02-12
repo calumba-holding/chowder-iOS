@@ -29,7 +29,7 @@ struct MessageBubbleView: View {
             )
 
             if message.role == .assistant {
-                Spacer(minLength: 60)
+                Spacer(minLength: 0)
             }
         }
     }

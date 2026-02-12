@@ -14,17 +14,17 @@ struct ThinkingShimmerView: View {
             // Pulsing dot
             Circle()
                 .fill(Color(.systemGray3))
-                .frame(width: 6, height: 6)
+                .frame(width: 8, height: 8)
                 .opacity(shimmerPhase > 0 ? 0.4 : 1.0)
 
             Text(label)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Color(.systemGray))
                 .lineLimit(1)
                 .overlay(shimmerOverlay)
                 .mask(
                     Text(label)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .lineLimit(1)
                 )
         }

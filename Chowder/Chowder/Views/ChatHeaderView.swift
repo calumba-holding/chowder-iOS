@@ -9,38 +9,46 @@ struct ChatHeaderView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                if let customAvatar = LocalStorage.loadAvatar() {
-                    Image(uiImage: customAvatar)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 32, height: 32)
-                        .clipShape(Circle())
-                } else if let uiImage = UIImage(named: "BotAvatar") {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 32, height: 32)
-                        .clipShape(Circle())
-                } else {
-                    Circle()
-                        .fill(Color(red: 219/255, green: 84/255, blue: 75/255))
-                        .frame(width: 32, height: 32)
-                        .overlay(
-                            Text(String(botName.prefix(1)))
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
-                        )
-                }
+                // Avatar + name tappable to open settings
+                Button {
+                    onSettingsTapped?()
+                } label: {
+                    HStack(spacing: 10) {
+                        if let customAvatar = LocalStorage.loadAvatar() {
+                            Image(uiImage: customAvatar)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 32, height: 32)
+                                .clipShape(Circle())
+                        } else if let uiImage = UIImage(named: "BotAvatar") {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 32, height: 32)
+                                .clipShape(Circle())
+                        } else {
+                            Circle()
+                                .fill(Color(red: 219/255, green: 84/255, blue: 75/255))
+                                .frame(width: 32, height: 32)
+                                .overlay(
+                                    Text(String(botName.prefix(1)))
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                )
+                        }
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(botName)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(botName)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.primary)
 
-                    Text(isOnline ? "Online" : "Offline")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.gray)
+                            Text(isOnline ? "Online" : "Offline")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(.gray)
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
 
                 Spacer()
 
@@ -49,14 +57,6 @@ struct ChatHeaderView: View {
                 } label: {
                     Image(systemName: "ant")
                         .font(.system(size: 16))
-                        .foregroundStyle(.gray)
-                }
-
-                Button {
-                    onSettingsTapped?()
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 18))
                         .foregroundStyle(.gray)
                 }
             }

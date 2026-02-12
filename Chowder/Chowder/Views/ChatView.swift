@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatView: View {
     @State private var viewModel = ChatViewModel()
+    @State private var isAtBottom = true
     var body: some View {
         VStack(spacing: 0) {
             // Messages
@@ -25,29 +26,58 @@ struct ChatView: View {
                             .id("shimmer")
                             .transition(.opacity)
                         }
+
+                        // Invisible anchor — must be inside LazyVStack so
+                        // onAppear/onDisappear track scroll visibility.
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom")
+                            .onAppear { withAnimation(.easeOut(duration: 0.12)) { isAtBottom = true } }
+                            .onDisappear { withAnimation(.easeOut(duration: 0.12)) { isAtBottom = false } }
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
                 }
-                .onChange(of: viewModel.messages.count) {
-                    if let last = viewModel.messages.last {
-                        withAnimation {
-                            proxy.scrollTo(last.id, anchor: .bottom)
+                .overlay(alignment: .bottom) {
+                    if !isAtBottom {
+                        Button {
+                            withAnimation {
+                                proxy.scrollTo("bottom", anchor: .bottom)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color(.secondaryLabel))
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    Circle()
+                                        .fill(Color(.systemBackground))
+                                )
+                                .shadow(color: .black.opacity(0.12), radius: 4, x: 0, y: 2)
                         }
+                        .padding(.bottom, 10)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    }
+                }
+                .onChange(of: viewModel.messages.count) {
+                    // New message added (user sent or assistant placeholder) — always scroll to bottom
+                    withAnimation {
+                        proxy.scrollTo("bottom", anchor: .bottom)
                     }
                 }
                 .onChange(of: viewModel.messages.last?.content) {
-                    if let last = viewModel.messages.last {
-                        withAnimation {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
+                    // Streaming delta — only auto-scroll if already at bottom
+                    guard isAtBottom else { return }
+                    withAnimation {
+                        proxy.scrollTo("bottom", anchor: .bottom)
                     }
                 }
                 .onChange(of: viewModel.currentActivity?.currentLabel) {
-                    // Scroll to shimmer when it appears/updates
+                    // Shimmer appeared/updated — only auto-scroll if already at bottom
+                    guard isAtBottom else { return }
                     if viewModel.currentActivity != nil {
                         withAnimation {
-                            proxy.scrollTo("shimmer", anchor: .bottom)
+                            proxy.scrollTo("bottom", anchor: .bottom)
                         }
                     }
                 }
@@ -96,8 +126,12 @@ struct ChatView: View {
             SettingsView(
                 currentIdentity: viewModel.botIdentity,
                 currentProfile: viewModel.userProfile,
+                isConnected: viewModel.isConnected,
                 onSave: { identity, profile in
                     viewModel.saveWorkspaceData(identity: identity, profile: profile)
+                },
+                onSaveConnection: {
+                    viewModel.reconnect()
                 },
                 onClearHistory: { viewModel.clearMessages() }
             )
