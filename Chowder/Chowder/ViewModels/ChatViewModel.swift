@@ -253,8 +253,13 @@ final class ChatViewModel: ChatServiceDelegate {
     }
 
     func chatServiceDidFinishMessage() {
-        log("message.done")
+        log("message.done - isLoading was \(isLoading)")
+        
+        // Force isLoading false
         isLoading = false
+        hasPlayedResponseHaptic = false
+        
+        log("Set isLoading=false, hasPlayedResponseHaptic=false")
 
         // Mark all remaining in-progress steps as completed
         currentActivity?.finishCurrentSteps()
@@ -262,12 +267,13 @@ final class ChatViewModel: ChatServiceDelegate {
         // Preserve the activity for the detail card, then clear the shimmer
         if let activity = currentActivity {
             lastCompletedActivity = activity
+            log("Preserved activity with \(activity.steps.count) steps")
         }
         
         // Clear current activity to prevent late history items from appearing
         currentActivity = nil
         shimmerStartTime = nil
-        log("Cleared currentActivity for generation \(currentRunGeneration)")
+        log("Cleared currentActivity for generation \(currentRunGeneration), isLoading=\(isLoading)")
 
         LocalStorage.saveMessages(messages)
     }
