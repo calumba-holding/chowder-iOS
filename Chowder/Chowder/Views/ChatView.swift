@@ -108,17 +108,23 @@ struct ChatView: View {
 
                 Button {
                     isInputFocused = false
-                    viewModel.send()
+                    if viewModel.isLoading {
+                        viewModel.stopGeneration()
+                    } else {
+                        viewModel.send()
+                    }
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill")
+                    Image(systemName: viewModel.isLoading ? "stop.circle.fill" : "arrow.up.circle.fill")
                         .font(.system(size: 32))
                         .foregroundStyle(
-                            viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading
-                                ? Color(.systemGray4)
-                                : Color.blue
+                            viewModel.isLoading
+                                ? Color.red
+                                : (viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? Color(.systemGray4)
+                                    : Color.blue)
                         )
                 }
-                .disabled(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading)
+                .disabled(!viewModel.isLoading && viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
