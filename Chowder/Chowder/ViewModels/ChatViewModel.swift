@@ -486,8 +486,11 @@ final class ChatViewModel: ChatServiceDelegate {
     /// Process individual content items from assistant messages (thinking, toolCall)
     private func processAssistantContentItem(_ contentItem: [String: Any]) {
         guard let type = contentItem["type"] as? String else {
+            log("⚠️ Content item missing 'type' field, keys: \(Array(contentItem.keys))")
             return
         }
+        
+        log("🔍 Content item type: \(type)")
         
         switch type {
         case "thinking":
@@ -498,22 +501,32 @@ final class ChatViewModel: ChatServiceDelegate {
             
         default:
             // text, image, etc - ignore for activity tracking
+            log("⚠️ Skipping content type: \(type)")
             break
         }
     }
     
     /// Process thinking content items
     private func processThinkingContent(_ contentItem: [String: Any]) {
+        log("🧠 processThinkingContent called")
         guard let thinking = contentItem["thinking"] as? String else {
+            log("⚠️ No 'thinking' field in content item")
             return
         }
+        
+        log("🧠 Raw thinking text: \(thinking)")
         
         // Strip markdown ** and trim
         let cleanText = thinking
             .replacingOccurrences(of: "**", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         
-        guard !cleanText.isEmpty else { return }
+        guard !cleanText.isEmpty else {
+            log("⚠️ Clean thinking text is empty")
+            return
+        }
+        
+        log("🧠 Clean thinking text: \(cleanText)")
         
         // Dedupe by thinkingSignature.id if available, else use hash
         var thinkingId: String?
@@ -522,11 +535,14 @@ final class ChatViewModel: ChatServiceDelegate {
            let sig = try? JSONSerialization.jsonObject(with: sigData) as? [String: Any],
            let id = sig["id"] as? String {
             thinkingId = id
+            log("🧠 Extracted thinkingId from signature: \(id)")
         } else if let sig = contentItem["thinkingSignature"] as? [String: Any],
                   let id = sig["id"] as? String {
             thinkingId = id
+            log("🧠 Extracted thinkingId from dict: \(id)")
         } else {
             thinkingId = String(cleanText.hashValue)
+            log("🧠 Using hash as thinkingId: \(thinkingId!)")
         }
         
         if let id = thinkingId, !seenThinkingIds.contains(id) {
@@ -538,18 +554,25 @@ final class ChatViewModel: ChatServiceDelegate {
             currentActivity?.steps.append(
                 ActivityStep(type: .thinking, label: cleanText, detail: "")
             )
+        } else {
+            log("⚠️ Thinking already seen, skipping: \(thinkingId ?? "nil")")
         }
     }
     
     /// Process toolCall content items
     private func processToolCallContent(_ contentItem: [String: Any]) {
+        log("🔧 processToolCallContent called")
         guard let toolCallId = contentItem["id"] as? String,
               let toolName = contentItem["name"] as? String else {
+            log("⚠️ Missing id or name in toolCall content: \(Array(contentItem.keys))")
             return
         }
         
+        log("🔧 Tool call id=\(toolCallId) name=\(toolName)")
+        
         // Skip if already seen
         guard !seenToolCallIds.contains(toolCallId) else {
+            log("⚠️ Tool call already seen, skipping")
             return
         }
         seenToolCallIds.insert(toolCallId)
