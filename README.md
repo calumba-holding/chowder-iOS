@@ -178,16 +178,80 @@ Chowder dynamically mirrors the bot's workspace files -- it never hardcodes iden
 
 ### Real-Time Activity Tracking
 
-Chowder polls `chat.history` every 500ms while the agent is running (from `lifecycle:start` to `lifecycle:end`). Each history poll extracts activity from assistant message `content` arrays:
+Chowder polls `chat.history` every 500ms while the agent is running (from `lifecycle:start` to `lifecycle:end`). Each history response returns the most recent messages, which Chowder parses to extract activity and show progress to the user.
 
-- **Thinking items** (`type: "thinking"`): Extracts the thinking text, strips markdown formatting (`**`), and displays as one-line progress (e.g., "Appending weather summary to file...")
-- **Tool calls** (`type: "toolCall"`): Derives user-friendly intents from tool arguments:
-  - Detects file operations via command parsing (e.g., `cat >> weather.txt` → "Appending to weather.txt...")
-  - Shows specific filenames instead of generic labels
-  - Stores metadata for completion messages
-- **Tool results** (`role: "toolResult"`): Shows completion with timing (e.g., "Updated weather.txt (13ms)")
+#### History Item Schema
 
-Deduplication prevents repeated items using `thinkingSignature.id`, `toolCallId`, and content hashing. A request-in-flight flag prevents concurrent polling.
+The gateway returns two relevant item types:
+
+**Assistant messages** (`role: "assistant"`) contain a `content` array with typed entries:
+
+```json
+{
+  "role": "assistant",
+  "timestamp": 1770929371188,
+  "stopReason": "toolUse",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "**Appending weather summary to file**",
+      "thinkingSignature": "{\"id\":\"rs_...\", ...}"
+    },
+    {
+      "type": "toolCall",
+      "name": "exec",
+      "id": "call_...|fc_...",
+      "arguments": { "command": "curl -s ...", "timeout": 120 }
+    }
+  ]
+}
+```
+
+**Tool result messages** (`role: "toolResult"`) contain completion details:
+
+```json
+{
+  "role": "toolResult",
+  "toolName": "exec",
+  "toolCallId": "call_...|fc_...",
+  "isError": false,
+  "timestamp": 1770929374921,
+  "details": {
+    "exitCode": 0,
+    "durationMs": 859,
+    "status": "completed",
+    "cwd": "/Users/.../.openclaw/workspace"
+  },
+  "content": [{ "type": "text", "text": "..." }]
+}
+```
+
+Assistant messages may also include an `errorMessage` field when the provider returns an error (e.g., quota exceeded). Chowder detects these and surfaces them in the chat.
+
+#### What Gets Extracted
+
+- **Thinking items** (`type: "thinking"`): The `thinking` field contains a short summary (often wrapped in markdown `**`). Chowder strips the formatting and displays it as a one-line progress label (e.g., "Appending weather summary to file..."). Deduplication uses `thinkingSignature.id` parsed from the JSON string in `thinkingSignature`.
+
+- **Tool calls** (`type: "toolCall"`): The `name` and `arguments` fields are used to derive a user-friendly intent. For `exec` calls, the `command` argument is parsed to detect file operations (e.g., `cat >> weather.txt` becomes "Appending to weather.txt..."), web fetches (`curl` becomes "Fetching data..."), and other patterns. Tool call metadata is stored by `id` for later use when the result arrives.
+
+- **Tool results** (`role: "toolResult"`): Matched to the original tool call via `toolCallId`. Shows completion with timing (e.g., "Updated weather.txt (859ms)") and detects errors via `isError` and `exitCode`.
+
+#### Deduplication
+
+History responses return the last N items each poll, so most items repeat. Chowder deduplicates using:
+
+- `thinkingSignature.id` for thinking items (falls back to content hash)
+- `toolCallId` for both tool calls and tool results
+- `role + timestamp` combination as a last resort for assistant messages
+- A request-in-flight flag prevents concurrent poll requests
+
+#### Timestamp Filtering
+
+Items from previous tasks are filtered by comparing the item's `timestamp` (Unix milliseconds from the gateway) against the local `currentRunStartTime`. A 10-second buffer accounts for clock skew between the iOS device and the gateway host.
+
+#### Lifecycle
+
+Activity steps are cleared from the UI as soon as the first streaming delta arrives (the assistant starts responding). This keeps the transition clean -- thinking steps fade out in 150ms and the streamed answer appears below. If the run ends without any response (e.g., provider error), the empty assistant bubble is removed.
 
 ### Sending Messages
 
@@ -227,6 +291,20 @@ Chowder automatically reconnects after network interruptions with a 3-second bac
 - The bot's IDENTITY.md may be empty. Tell the bot to fill it in: "Set your name to OddJob in IDENTITY.md"
 - Check the debug log for `Synced IDENTITY.md` or `Sync response could not be parsed` messages
 
+### "Error: You exceeded your current quota"
+
+- This is a provider-side error (e.g., OpenAI billing limit)
+- Check your API key balance at [platform.openai.com](https://platform.openai.com)
+- Complex agent tasks (browsing, multi-step tool use) can consume 200K+ tokens per run
+- Chowder will surface the error message in the chat instead of showing a blank bubble
+
+### Thinking steps not appearing
+
+- Open the debug log (tap the header) and look for `📋 Processing history item` entries
+- If you see `⏰ Skipping old item`, there may be clock skew between your iPhone and the gateway host -- the app allows a 10-second buffer but larger drift can cause filtering
+- If you see `"Filtered: X by toolCallId, Y by timestamp → 0 new items"` every poll, all items are from a previous run
+- If the agent responds very quickly (simple questions), there may not be any thinking or tool steps to show
+
 ### Gateway not reachable over Tailscale
 
 - Ensure `gateway.bind` is set to `"tailnet"` (not `"loopback"`)
@@ -245,12 +323,13 @@ Chowder/
     Message.swift                -- Chat message model (Codable, persisted)
     UserProfile.swift            -- Parsed USER.md model + markdown serialization
   Services/
-    ChatService.swift            -- WebSocket connection, protocol handling, verbose tool parsing
+    ChatService.swift            -- WebSocket connection, protocol handling, chat.history polling
     KeychainService.swift        -- Secure token storage
     LocalStorage.swift           -- File-based persistence (messages, avatar, identity, profile)
   ViewModels/
-    ChatViewModel.swift          -- Chat state, sync orchestration, shimmer logic
+    ChatViewModel.swift          -- Chat state, history parsing, activity tracking, shimmer logic
   Views/
+    ActivityStepRow.swift        -- Compact inline row for completed thinking/tool steps
     AgentActivityCard.swift      -- Detail card showing all thinking/tool steps
     ChatView.swift               -- Main chat screen with shimmer + activity card
     ChatHeaderView.swift         -- Header with dynamic bot name + online/offline

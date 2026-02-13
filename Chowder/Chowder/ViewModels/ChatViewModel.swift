@@ -200,6 +200,9 @@ final class ChatViewModel: ChatServiceDelegate {
 
         LocalStorage.saveMessages(messages)
 
+        // Start the Lock Screen Live Activity
+        LiveActivityManager.shared.startActivity(agentName: botName, userTask: text)
+
         chatService?.send(text: text)
         log("chatService.send() called")
     }
@@ -243,6 +246,8 @@ final class ChatViewModel: ChatServiceDelegate {
                 lastCompletedActivity = currentActivity
                 currentActivity = nil
                 shimmerStartTime = nil
+                // End the Lock Screen Live Activity now that the answer is streaming
+                LiveActivityManager.shared.endActivity()
                 log("Cleared activity on first delta")
             }
         }
@@ -270,6 +275,9 @@ final class ChatViewModel: ChatServiceDelegate {
             log("Preserved activity with \(activity.steps.count) steps")
         }
         
+        // End the Lock Screen Live Activity
+        LiveActivityManager.shared.endActivity()
+
         // Clear current activity to prevent late history items from appearing
         currentActivity = nil
         shimmerStartTime = nil
@@ -295,6 +303,7 @@ final class ChatViewModel: ChatServiceDelegate {
         }
         isLoading = false
         currentActivity = nil
+        LiveActivityManager.shared.endActivity()
         LocalStorage.saveMessages(messages)
     }
 
@@ -322,6 +331,12 @@ final class ChatViewModel: ChatServiceDelegate {
                 ActivityStep(type: .thinking, label: "Thinking", detail: text)
             )
         }
+
+        // Update the Live Activity on the Lock Screen
+        LiveActivityManager.shared.updateStep(
+            "Thinking...",
+            completedSteps: currentActivity?.completedSteps.map(\.label) ?? []
+        )
     }
 
     func chatServiceDidReceiveToolEvent(name: String, path: String?, args: [String: Any]?) {
@@ -345,6 +360,12 @@ final class ChatViewModel: ChatServiceDelegate {
             ActivityStep(type: .toolCall, label: label, detail: detail)
         )
         log("Activity now has \(currentActivity?.steps.count ?? 0) total steps (\(currentActivity?.completedSteps.count ?? 0) completed)")
+
+        // Update the Live Activity on the Lock Screen
+        LiveActivityManager.shared.updateStep(
+            label,
+            completedSteps: currentActivity?.completedSteps.map(\.label) ?? []
+        )
     }
 
     // MARK: - Friendly Tool Labels
@@ -583,6 +604,12 @@ final class ChatViewModel: ChatServiceDelegate {
             currentActivity?.steps.append(
                 ActivityStep(type: .thinking, label: cleanText, detail: "")
             )
+
+            // Update the Live Activity on the Lock Screen
+            LiveActivityManager.shared.updateStep(
+                cleanText + "...",
+                completedSteps: currentActivity?.completedSteps.map(\.label) ?? []
+            )
         } else {
             log("⚠️ Thinking already seen, skipping: \(thinkingId ?? "nil")")
         }
@@ -625,6 +652,12 @@ final class ChatViewModel: ChatServiceDelegate {
         currentActivity?.currentLabel = intent
         currentActivity?.steps.append(
             ActivityStep(type: .toolCall, label: intent, detail: "")
+        )
+
+        // Update the Live Activity on the Lock Screen
+        LiveActivityManager.shared.updateStep(
+            intent,
+            completedSteps: currentActivity?.completedSteps.map(\.label) ?? []
         )
     }
     
