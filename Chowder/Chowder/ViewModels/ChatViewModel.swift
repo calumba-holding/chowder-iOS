@@ -256,6 +256,15 @@ final class ChatViewModel: ChatServiceDelegate {
             hasPlayedResponseHaptic = true
             responseHaptic.impactOccurred()
             log("💬 Assistant responding")
+            
+            // Clear thinking steps immediately when answer starts streaming
+            if currentActivity != nil {
+                currentActivity?.finishCurrentSteps()
+                lastCompletedActivity = currentActivity
+                currentActivity = nil
+                shimmerStartTime = nil
+                log("Cleared activity on first delta")
+            }
         }
 
         // Don't hide the shimmer here — for long agentic tasks the agent alternates

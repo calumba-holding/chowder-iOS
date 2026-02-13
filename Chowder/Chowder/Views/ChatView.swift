@@ -40,7 +40,7 @@ struct ChatView: View {
                                     ActivityStepRow(step: step) {
                                         viewModel.showActivityCard = true
                                     }
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                    .transition(.opacity.combined(with: .move(edge: .top)).animation(.easeOut(duration: 0.15)))
                                     .onAppear {
                                         print("🎨 Completed step appeared: '\(step.label)'")
                                         // Light haptic when step appears
@@ -49,6 +49,7 @@ struct ChatView: View {
                                     }
                                 }
                             }
+                            .transition(.opacity.animation(.easeOut(duration: 0.15)))
                         }
 
                         // Thinking shimmer — shown while the agent is working
