@@ -74,9 +74,9 @@ struct AgentActivityCard: View {
     private func stepRow(_ step: ActivityStep) -> some View {
         HStack(alignment: .top, spacing: 10) {
             // Icon
-            Image(systemName: step.type == .thinking ? "brain.head.profile" : "wrench.and.screwdriver")
+            Image(systemName: "checkmark.circle")
                 .font(.system(size: 12))
-                .foregroundStyle(step.type == .thinking ? .purple : .blue)
+                .foregroundStyle(.gray)
                 .frame(width: 20, alignment: .center)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -96,7 +96,7 @@ struct AgentActivityCard: View {
                     .foregroundStyle(Color(.systemGray3))
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
 }
 

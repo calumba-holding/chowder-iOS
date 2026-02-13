@@ -11,7 +11,7 @@ struct ActivityStepRow: View {
         HStack(spacing: 6) {
             Image(systemName: iconName)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(iconColor)
+                .foregroundStyle(.gray)
                 .frame(width: 16, alignment: .center)
 
             Text(step.label)
@@ -25,7 +25,7 @@ struct ActivityStepRow: View {
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .foregroundStyle(Color(.tertiaryLabel))
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
@@ -36,7 +36,7 @@ struct ActivityStepRow: View {
     private var iconName: String {
         switch step.type {
         case .thinking:
-            return "brain.head.profile"
+            return "checkmark.circle"
         case .toolCall:
             switch step.status {
             case .completed: return "checkmark.circle"
@@ -47,15 +47,7 @@ struct ActivityStepRow: View {
     }
 
     private var iconColor: Color {
-        switch step.type {
-        case .thinking: return .purple
-        case .toolCall:
-            switch step.status {
-            case .completed: return .green
-            case .failed:    return .red
-            case .inProgress: return .blue
-            }
-        }
+        return .gray
     }
 
     /// Format the elapsed time as a short string: "2s", "1m 23s", etc.
