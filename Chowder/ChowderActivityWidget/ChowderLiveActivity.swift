@@ -73,118 +73,101 @@ struct ChowderLiveActivity: Widget {
     @ViewBuilder
     private func lockScreenBanner(context: ActivityViewContext<ChowderActivityAttributes>) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // ── Row 1: User task + Cost ──
-            HStack {
-                Text(context.attributes.userTask)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+            // ── Row 1: Header (OpenClaw > task + intent/timer) + Cost ──
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    // "OpenClaw > user task"
+                    HStack(spacing: 4) {
+                        Text("OpenClaw")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.6))
+                        Image(systemName: "arrow.forward")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.4))
+                        Text(context.state.subject ?? context.attributes.userTask)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+
+                    // Current intent ALL CAPS + timer (or "DONE" when finished)
+                    if context.state.isFinished {
+                        Text("DONE")
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.5))
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.turn.down.right")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Color(red: 247/255, green: 90/255, blue: 77/255))
+
+                            Text(context.state.currentIntent)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.5))
+                                .textCase(.uppercase)
+                                .lineLimit(1)
+                                .contentTransition(.numericText())
+
+                            Text(
+                                timerInterval: context.state.intentStartDate...Date.now.addingTimeInterval(3600),
+                                countsDown: false
+                            )
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.5))
+                            .frame(width: 56, alignment: .leading)
+                        }
+                    }
+                }
 
                 Spacer()
 
                 if let cost = context.state.costTotal {
                     Text(cost)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
                         .background(
                             Capsule()
-                                .fill(Color.white.opacity(0.1))
+                                .fill(Color(red: 255/255, green: 80/255, blue: 65/255))
                         )
                 }
             }
-            .padding(.bottom, 16)
 
-            // ── Row 2: Intent scroll stack ──
-            VStack(alignment: .leading, spacing: 0) {
-                // 2nd previous intent -- grey check, fading out
-                if let secondPrev = context.state.secondPreviousIntent, !context.state.isFinished {
-                    HStack(spacing: 6) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.gray.opacity(0.2))
-                                .frame(width: 16, height: 16)
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(Color.gray.opacity(0.4))
-                        }
-                        Text(secondPrev)
-                            .font(.system(size: 14, weight: .regular))
-                            .foregroundStyle(.white.opacity(0.1))
-                            .lineLimit(1)
-                    }
-                    .transition(.push(from: .bottom))
-                }
+            Spacer()
 
-                // Previous intent -- yellow arrow + "..."
+            // ── Row 2: Previous intent (large, wraps to 2 lines) ──
+            Group {
                 if let prev = context.state.previousIntent, !context.state.isFinished {
-                    HStack(spacing: 6) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.yellow)
-                                .frame(width: 22, height: 22)
-                            Image(systemName: "arrow.turn.down.right")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(.black)
-                        }
-                        Text(prev + "...")
-                            .font(.system(size: 20, weight: .regular))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .mask(ShimmerMask())
-                    }
-                    .transition(.push(from: .bottom))
-                }
-
-                // Done state
-                if context.state.isFinished {
-                    HStack(spacing: 6) {
+                    Text(prev + "...")
+                        .font(.system(size: 26, weight: .medium))
+                        .foregroundStyle(.white)
+                        .lineSpacing(-4)
+                        .lineLimit(2)
+                        .mask(ShimmerMask())
+                        .transition(.push(from: .bottom))
+                } else if context.state.isFinished {
+                    HStack(spacing: 8) {
                         ZStack {
                             Circle()
                                 .fill(Color.green)
-                                .frame(width: 22, height: 22)
+                                .frame(width: 28, height: 28)
                             Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(.black)
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white)
                         }
-                        Text("Done")
-                            .font(.system(size: 20, weight: .regular))
+                        .transition(.scale.combined(with: .opacity))
+                        Text("Task Complete")
+                            .font(.system(size: 26, weight: .medium))
                             .foregroundStyle(.white)
-                            .lineLimit(1)
                     }
                 }
             }
-            .padding(.bottom, 20)
-
-            // ── Row 3: Current intent (ALL CAPS) + Timer + Step ──
-            HStack {
-                if !context.state.isFinished {
-                    Text(context.state.currentIntent)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .textCase(.uppercase)
-                        .lineLimit(1)
-                        .contentTransition(.numericText())
-
-                    Text(
-                        timerInterval: context.state.intentStartDate...Date.now.addingTimeInterval(3600),
-                        countsDown: false
-                    )
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .frame(width: 56, alignment: .leading)
-                }
-
-                Spacer()
-
-                Text("Step \(context.state.stepNumber)")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white)
-                    .contentTransition(.numericText())
-            }
+            .frame(minHeight: 58, alignment: .bottomLeading)
         }
-        .padding(16)
+        .padding(.top, 16)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
         .activityBackgroundTint(.black)
     }
 }

@@ -251,6 +251,7 @@ final class ChatService: NSObject {
         stopHistoryPolling()
         
         activeRunId = "polling"  // Marker that polling is active
+        historyRequestInFlight = false  // Reset in-flight flag (critical after reconnects)
         seenSequenceNumbers.removeAll()
         seenToolCallIds.removeAll()
         seenTimestamps.removeAll()
@@ -280,6 +281,7 @@ final class ChatService: NSObject {
         historyPollTimer?.invalidate()
         historyPollTimer = nil
         activeRunId = nil
+        historyRequestInFlight = false  // Reset in-flight flag
         seenSequenceNumbers.removeAll()
         seenToolCallIds.removeAll()
         seenTimestamps.removeAll()

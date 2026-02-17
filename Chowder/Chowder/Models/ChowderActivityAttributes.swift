@@ -10,6 +10,8 @@ struct ChowderActivityAttributes: ActivityAttributes {
 
     /// Dynamic state that updates as the agent works.
     struct ContentState: Codable, Hashable {
+        /// Short subject line summarizing the task (latched from first thinking summary).
+        var subject: String?
         /// The latest intent -- shown ALL CAPS at the bottom left.
         var currentIntent: String
         /// The previous intent -- shown with the yellow arrow + "..."

@@ -107,6 +107,8 @@ final class ChatViewModel: ChatServiceDelegate {
     private var liveActivityCost: String?
     /// Total step count for the Live Activity.
     private var liveActivityStepNumber: Int = 1
+    /// Subject line for the Live Activity -- latched from first thinking summary.
+    private var liveActivitySubject: String?
 
     /// Shift a new thinking intent into the yellow/grey stack.
     /// Only call this for thinking steps -- NOT tool events.
@@ -114,11 +116,16 @@ final class ChatViewModel: ChatServiceDelegate {
         guard newIntent != liveActivityYellowIntent else { return }
         liveActivityGreyIntent = liveActivityYellowIntent
         liveActivityYellowIntent = newIntent
+        // Latch the first thinking intent as the subject
+        if liveActivitySubject == nil {
+            liveActivitySubject = newIntent
+        }
     }
 
     /// Push current tracking state to the Live Activity.
     private func pushLiveActivityUpdate() {
         LiveActivityManager.shared.update(
+            subject: liveActivitySubject,
             currentIntent: liveActivityBottomText,
             previousIntent: liveActivityYellowIntent,
             secondPreviousIntent: liveActivityGreyIntent,
@@ -135,6 +142,7 @@ final class ChatViewModel: ChatServiceDelegate {
         liveActivityCostAccumulator = 0
         liveActivityCost = nil
         liveActivityStepNumber = 1
+        liveActivitySubject = nil
     }
 
     // MARK: - Buffered Debug Logging
@@ -598,7 +606,7 @@ final class ChatViewModel: ChatServiceDelegate {
             if let cost = usage["cost"] as? [String: Any],
                let total = cost["total"] as? Double, total > 0 {
                 liveActivityCostAccumulator += total
-                liveActivityCost = String(format: "$%.4f", liveActivityCostAccumulator)
+                liveActivityCost = String(format: "$%.3f", liveActivityCostAccumulator)
                 log("💰 Cost accumulated: \(liveActivityCost!) (+\(total))")
             }
         }
@@ -785,7 +793,7 @@ final class ChatViewModel: ChatServiceDelegate {
            let cost = usage["cost"] as? [String: Any],
            let total = cost["total"] as? Double, total > 0 {
             liveActivityCostAccumulator += total
-            liveActivityCost = String(format: "$%.4f", liveActivityCostAccumulator)
+            liveActivityCost = String(format: "$%.3f", liveActivityCostAccumulator)
         }
 
         // Skip if already processed

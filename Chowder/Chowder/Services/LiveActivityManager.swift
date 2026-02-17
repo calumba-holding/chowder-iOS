@@ -13,6 +13,8 @@ final class LiveActivityManager: @unchecked Sendable {
     private var lastIntentText: String = ""
     /// Last known state for use in endActivity.
     private var lastState: ChowderActivityAttributes.ContentState?
+    /// Latched subject -- set from the first thinking summary, never overwritten.
+    private var latchedSubject: String?
 
     private init() {}
 
@@ -27,6 +29,7 @@ final class LiveActivityManager: @unchecked Sendable {
         intentStartDate = Date()
         lastIntentText = ""
         lastState = nil
+        latchedSubject = nil
 
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             print("⚡ Live Activities not enabled — skipping")
@@ -42,6 +45,7 @@ final class LiveActivityManager: @unchecked Sendable {
             userTask: truncatedTask
         )
         let initialState = ChowderActivityAttributes.ContentState(
+            subject: nil,
             currentIntent: "Thinking...",
             previousIntent: "Thinking...",
             secondPreviousIntent: "Message received",
@@ -67,6 +71,7 @@ final class LiveActivityManager: @unchecked Sendable {
 
     /// Update the Live Activity with new intent data.
     func update(
+        subject: String?,
         currentIntent: String,
         previousIntent: String?,
         secondPreviousIntent: String?,
@@ -75,6 +80,11 @@ final class LiveActivityManager: @unchecked Sendable {
     ) {
         guard let _ = currentActivity else { return }
 
+        // Latch subject on first non-nil value
+        if latchedSubject == nil, let subject {
+            latchedSubject = subject
+        }
+
         // Reset the timer when the intent text changes
         if currentIntent != lastIntentText {
             lastIntentText = currentIntent
@@ -82,6 +92,7 @@ final class LiveActivityManager: @unchecked Sendable {
         }
 
         let state = ChowderActivityAttributes.ContentState(
+            subject: latchedSubject,
             currentIntent: currentIntent,
             previousIntent: previousIntent,
             secondPreviousIntent: secondPreviousIntent,
@@ -104,6 +115,7 @@ final class LiveActivityManager: @unchecked Sendable {
         currentActivity = nil
 
         let finalState = ChowderActivityAttributes.ContentState(
+            subject: latchedSubject,
             currentIntent: "Done",
             previousIntent: lastState?.currentIntent,
             secondPreviousIntent: lastState?.previousIntent,
@@ -114,6 +126,7 @@ final class LiveActivityManager: @unchecked Sendable {
         )
         lastState = nil
         lastIntentText = ""
+        latchedSubject = nil
         let content = ActivityContent(state: finalState, staleDate: nil)
 
         Task {
