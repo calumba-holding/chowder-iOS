@@ -322,32 +322,12 @@ struct IntentCard: View {
     ChowderActivityAttributes.ContentState.step3
     ChowderActivityAttributes.ContentState.step4
     ChowderActivityAttributes.ContentState.step5
+    ChowderActivityAttributes.ContentState.step6
     ChowderActivityAttributes.ContentState.finished
 }
 
 #Preview("Lock Screen - Finished", as: .content, using: ChowderActivityAttributes.preview) {
     ChowderLiveActivity()
 } contentStates: {
-    ChowderActivityAttributes.ContentState.finished
-}
-
-#Preview("Dynamic Island Compact", as: .dynamicIsland(.compact), using: ChowderActivityAttributes.preview) {
-    ChowderLiveActivity()
-} contentStates: {
-    ChowderActivityAttributes.ContentState.inProgress
-    ChowderActivityAttributes.ContentState.finished
-}
-
-#Preview("Dynamic Island Minimal", as: .dynamicIsland(.minimal), using: ChowderActivityAttributes.preview) {
-    ChowderLiveActivity()
-} contentStates: {
-    ChowderActivityAttributes.ContentState.inProgress
-    ChowderActivityAttributes.ContentState.finished
-}
-
-#Preview("Dynamic Island Expanded", as: .dynamicIsland(.expanded), using: ChowderActivityAttributes.preview) {
-    ChowderLiveActivity()
-} contentStates: {
-    ChowderActivityAttributes.ContentState.inProgress
     ChowderActivityAttributes.ContentState.finished
 }

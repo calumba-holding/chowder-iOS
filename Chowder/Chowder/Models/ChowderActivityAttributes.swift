@@ -47,34 +47,6 @@ extension ChowderActivityAttributes {
 }
 
 extension ChowderActivityAttributes.ContentState {
-    static var inProgress: ChowderActivityAttributes.ContentState {
-        ChowderActivityAttributes.ContentState(
-            subject: "Train to Margate",
-            currentIntent: "Searching available trains",
-            currentIntentIcon: "magnifyingglass",
-            previousIntent: "Reading project files",
-            secondPreviousIntent: "Identifying dependencies",
-            intentStartDate: Date(),
-            stepNumber: 3,
-            costTotal: "$0.49"
-        )
-    }
-
-    static var finished: ChowderActivityAttributes.ContentState {
-        ChowderActivityAttributes.ContentState(
-            subject: "Your train to Margate has been booked.",
-            currentIntent: "Complete",
-            previousIntent: nil,
-            secondPreviousIntent: nil,
-            intentStartDate: startDate,
-            intentEndDate: startDate.addingTimeInterval(38),
-            stepNumber: 7,
-            costTotal: "$1.23"
-        )
-    }
-
-    // MARK: - Progressive States (for cycling through)
-    
     static var startDate: Date = .now
 
     static var step1: ChowderActivityAttributes.ContentState {
@@ -150,6 +122,19 @@ extension ChowderActivityAttributes.ContentState {
             intentStartDate: startDate,
             stepNumber: 6,
             costTotal: "$1.20",
+        )
+    }
+    
+    static var finished: ChowderActivityAttributes.ContentState {
+        ChowderActivityAttributes.ContentState(
+            subject: "Your train to Margate has been booked.",
+            currentIntent: "Complete",
+            previousIntent: nil,
+            secondPreviousIntent: nil,
+            intentStartDate: startDate,
+            intentEndDate: startDate.addingTimeInterval(38),
+            stepNumber: 7,
+            costTotal: "$1.23"
         )
     }
 }
