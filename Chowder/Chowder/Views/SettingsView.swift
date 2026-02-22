@@ -146,6 +146,11 @@ struct SettingsView: View {
                             .padding(.horizontal, 4)
                             .padding(.top, 8)
 
+                        Text("For demo purposes only. This section will be contributed to as the project evolves.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 4)
+
                         GlassCard(padding: 4) {
                             VStack(spacing: 0) {
                                 ForEach(Array(PassbookItem.allItems.enumerated()), id: \.element.id) { index, item in
@@ -170,6 +175,11 @@ struct SettingsView: View {
                             .textCase(.uppercase)
                             .padding(.horizontal, 4)
                             .padding(.top, 8)
+
+                        Text("For demo purposes only. This section will be contributed to as the project evolves.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 4)
 
                         GlassCard {
                             Button {

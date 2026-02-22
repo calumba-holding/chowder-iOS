@@ -1,6 +1,18 @@
-# Chowder - iOS Client for OpenClaw
+# Chowder
 
-Chowder is a native iOS chat client that connects to an [OpenClaw](https://docs.openclaw.ai) gateway over WebSocket. It lets you talk to your personal AI assistant from your iPhone or iPad, using the same sessions and routing as WhatsApp, Telegram, Discord, and other OpenClaw channels.
+From [New Material](https://x.com/NewMaterial): we're publishing a **toolkit of AI-first interactions** we believe should be common in mobile chat interfaces: streaming responses, live activity and thinking steps, agent identity sync, and workspace-aware settings — so chat UIs feel native and transparent instead of opaque.
+
+**Reach out:** [hello@newmaterial.co](mailto:hello@newmaterial.co) · **Follow:** [NewMaterial on X](https://x.com/NewMaterial)
+
+*This repo is in a very early state. We’d love feedback and contributions; please be kind.*
+
+---
+
+The **first use case** for this toolkit is **Chowder** — a native iOS chat client that works with [OpenClaw](https://docs.openclaw.ai). You can talk to your personal AI assistant from your iPhone or iPad over an OpenClaw gateway, using the same sessions and routing as WhatsApp, Telegram, Discord, and other OpenClaw channels. Below is the Chowder + OpenClaw setup and how it works.
+
+## Chowder — iOS client for OpenClaw
+
+Chowder connects to an OpenClaw gateway over WebSocket and implements the interactions above (streaming, live activity, identity sync, etc.) against the OpenClaw Gateway Protocol.
 
 ## Features
 
