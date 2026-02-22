@@ -1,8 +1,8 @@
 # Chowder
 
-From [New Material](https://x.com/NewMaterial): we're publishing a **toolkit of AI-first interactions** we believe should be common in mobile chat interfaces: streaming responses, live activity and thinking steps, agent identity sync, and workspace-aware settings — so chat UIs feel native and transparent instead of opaque.
+From [New Material](https://newmaterial.co): we're publishing a **toolkit of AI-first interactions** we believe should be common in mobile chat interfaces. We're starting with Live Activity and thinking steps; we're also planning new ways to input speech, add context and media from the keyboard, use location, and more — so chat UIs feel native and transparent instead of opaque.
 
-**Reach out:** [hello@newmaterial.co](mailto:hello@newmaterial.co) · **Follow:** [NewMaterial on X](https://x.com/NewMaterial)
+**Reach out:** [hello@newmaterial.co](mailto:hello@newmaterial.co) · **Website:** [newmaterial.co](https://newmaterial.co) · **Follow:** [NewMaterial on X](https://x.com/newmaterialco)
 
 *This repo is in a very early state. We’d love feedback and contributions; please be kind.*
 
@@ -12,7 +12,7 @@ The **first use case** for this toolkit is **Chowder** — a native iOS chat cli
 
 ## Chowder — iOS client for OpenClaw
 
-Chowder connects to an OpenClaw gateway over WebSocket and implements the interactions above (streaming, live activity, identity sync, etc.) against the OpenClaw Gateway Protocol.
+Chowder connects to an OpenClaw gateway over WebSocket and implements the first of these — streaming, Live Activity and thinking steps, identity sync, workspace-aware settings — against the OpenClaw Gateway Protocol.
 
 ## Features
 
@@ -27,6 +27,7 @@ Chowder connects to an OpenClaw gateway over WebSocket and implements the intera
 - **Settings sync** -- edit the bot's identity or your user profile in Settings and the changes are written back to the OpenClaw workspace files
 - **Automatic reconnection** with 3-second backoff after network interruptions
 - **Debug log** -- tap the header to view raw WebSocket traffic for troubleshooting
+- **Demo mode** -- in Settings, you can run a demo (e.g. Live Activity) to try UI interactions without connecting to OpenClaw
 
 ## Prerequisites
 
@@ -157,11 +158,12 @@ In Xcode:
 ### 6. Configure Chowder on Your iPhone
 
 1. Open Chowder -- the Settings sheet appears on first launch
-2. Fill in the fields:
+2. *(Optional)* To try UI interactions without OpenClaw, use the **demo** in Settings (e.g. Live Activity demo) — no gateway or token required.
+3. Fill in the fields:
    - **Gateway**: `ws://<tailscale-ip>:18789` (e.g. `ws://100.104.164.27:18789`)
    - **Token**: paste the gateway token from step 4
    - **Session**: leave as `agent:main:main` (default) or change to target a specific agent
-3. Tap **Save**
+4. Tap **Save**
 
 Chowder will connect to the gateway, complete the WebSocket handshake, and show **Online** in the header.
 
