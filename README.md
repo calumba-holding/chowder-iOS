@@ -1,6 +1,6 @@
 # Chowder
 
-We're publishing a **toolkit of AI-first interactions** we believe should be common in mobile chat interfaces. We're starting with Live Activity and thinking steps; we're also planning new ways to input speech, add context and media from the keyboard, use location, and more — so chat UIs feel native and transparent instead of opaque.
+We're publishing a **toolkit of AI-first interactions** we believe should be common in mobile chat interfaces. We're starting with Live Activity and thinking steps; we're also planning new ways to input speech, add context and media from the keyboard, use location, and more so chat UIs feel native and transparent instead of opaque.
 
 **Reach out:** [hello@newmaterial.co](mailto:hello@newmaterial.co) · **Website:** [newmaterial.co](https://newmaterial.co) · **Follow:** [NewMaterial on X](https://x.com/newmaterialco)
 
