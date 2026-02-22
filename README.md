@@ -7,6 +7,7 @@
 🚧 *This repo is very early work in progress. We’d love feedback and contributions, please be kind.*
 
 ---
+<img width="2141" height="842" alt="Chowder Banner" src="https://github.com/user-attachments/assets/56b23b3a-e9d0-4c54-87ac-6c19f00d4dae" />
 
 **Chowder** is an native iOS chat client that works with [OpenClaw](https://docs.openclaw.ai) leveraging our toolkit. You can talk to your personal AI assistant from your iPhone or iPad over an OpenClaw gateway, using the same sessions and routing as WhatsApp, Telegram, Discord, and other OpenClaw channels. Below is the Chowder + OpenClaw setup and how it works.
 
