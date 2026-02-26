@@ -6,13 +6,12 @@ actor TaskSummaryService {
 
     private init() {}
 
-    /// Generate a 2-4 word title for the overall task represented by the conversation.
-    /// Analyzes up to the last 5 user messages to identify the primary task, ignoring
-    /// follow-up details like dates, confirmations, or clarifications.
+    /// Generate a 2-4 word title for the task represented by the latest user message.
     /// Returns nil if Foundation Models is unavailable or generation fails.
-    func generateTitle(for messages: [String]) async -> String? {
-        guard !messages.isEmpty else {
-            print("📝 TaskSummaryService: No messages provided")
+    func generateTitle(from latestUserMessage: String) async -> String? {
+        let message = latestUserMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else {
+            print("📝 TaskSummaryService: No latest user message provided")
             return nil
         }
         
@@ -24,24 +23,18 @@ actor TaskSummaryService {
 
         let session = LanguageModelSession(model: .init(useCase: .general, guardrails: .permissiveContentTransformations))
         
-        let numberedMessages = messages.enumerated().map { index, msg in
-            "\(index + 1). \"\(msg)\""
-        }.joined(separator: "\n")
-        
         let prompt = """
-        Analyze these user messages from a conversation with an AI assistant and identify the overall task being worked on. \
-        It should read like the task that the assistant will perform based on the messages. \
-        It should sound like an imperative command. Like "Verb, Adjective/Noun, Noun".
+        You are generating a very short UI task title.
 
-        Messages (oldest to newest):
-        \(numberedMessages)
+        Use ONLY this latest user message:
+        "\(message)"
 
-        The latest message may just be a follow-up (like a date, confirmation, or answer to a question). \
-        Look at all messages to understand what the user is ultimately trying to accomplish.
-
-        Give a short 2-4 word title for the overall task, not just the latest message. \
-        Make the title specific to the details in the message. Dont use generic nouns. \
-        Prioritise proper nouns and details that the user has sent.
+        Rules:
+        - Infer the task the assistant should do from this message alone
+        - Return a concise 2-4 word imperative-style title
+        - Prefer specific nouns and proper nouns from the message
+        - Avoid generic words
+        - Do not add punctuation at the end
 
         It is crucial that the title is succinct because it will be used in UI. Only output the title, nothing else.
         """
@@ -102,13 +95,12 @@ actor TaskSummaryService {
         }
     }
 
-    /// Generate a completion message from a task title.
-    /// Transforms an imperative title like "Book train tickets" into a past-tense completion
-    /// message like "Your tickets have been booked".
+    /// Generate a completion message from the assistant's final response text.
     /// Returns nil if Foundation Models is unavailable or generation fails.
-    func generateCompletionMessage(for taskTitle: String) async -> String? {
-        guard !taskTitle.isEmpty else {
-            print("📝 TaskSummaryService: No task title provided")
+    func generateCompletionMessage(fromAssistantResponse assistantResponse: String) async -> String? {
+        let finalResponse = assistantResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !finalResponse.isEmpty else {
+            print("📝 TaskSummaryService: No assistant response provided")
             return nil
         }
 
@@ -121,22 +113,17 @@ actor TaskSummaryService {
         let session = LanguageModelSession(model: .init(useCase: .general, guardrails: .permissiveContentTransformations))
 
         let prompt = """
-        Transform this task title into a short completion message that tells the user the task is done.
-
-        Task title: "\(taskTitle)"
+        You are generating a completion summary for a finished task.
+        
+        Use ONLY this final assistant response:
+        "\(finalResponse)"
 
         Rules:
-        - Convert from imperative/present tense to past tense
-        - Start with "Your" when appropriate (e.g., "Book train tickets" → "Your tickets have been booked")
+        - Summarize the actual outcome or result achieved
+        - Use past-tense, notification style
         - Keep it concise (under 8 words)
-        - Make it sound like a friendly notification
+        - Be specific to what was actually completed
         - Do not use exclamation marks
-
-        Examples:
-        - "Book train tickets" → "Your tickets have been booked"
-        - "Find restaurants nearby" → "Restaurants found nearby"
-        - "Send email to John" → "Your email has been sent to John"
-        - "Check weather forecast" → "Weather forecast retrieved"
 
         Only output the completion message, nothing else.
         """

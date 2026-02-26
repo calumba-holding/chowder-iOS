@@ -40,6 +40,8 @@ https://github.com/user-attachments/assets/5af73b21-0ec1-4804-8a40-39dbd2f10adb
 - **Xcode 15+** on a Mac to build and install Chowder
 - **iOS 17+** on the target device
 
+> Note: For higher-quality local task/completion summaries in the Live Activity and chat header, enable Apple Intelligence on the iOS device (Settings > Apple Intelligence & Siri). If unavailable or disabled, summaries may be less polished.
+
 ## Architecture
 
 ```

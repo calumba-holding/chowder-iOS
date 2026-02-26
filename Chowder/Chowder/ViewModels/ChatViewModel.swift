@@ -188,16 +188,26 @@ final class ChatViewModel: ChatServiceDelegate {
         pastTenseCache.removeAll()
     }
 
-    /// Generate a completion summary message from the task title.
-    /// Returns nil if no task title is available or generation fails.
-    private func generateCompletionSummary(from taskTitle: String?) async -> String? {
-        guard let taskTitle = taskTitle, !taskTitle.isEmpty else {
-            log("📝 No task title for completion summary")
+    /// Generate a completion summary for the finished turn from the
+    /// final assistant response text.
+    private func generateCompletionSummary() async -> String? {
+        guard let finalAssistantResponse = latestAssistantResponseText(), !finalAssistantResponse.isEmpty else {
+            log("📝 No final assistant response for completion summary")
             return nil
         }
-        let summary = await TaskSummaryService.shared.generateCompletionMessage(for: taskTitle)
+
+        let summary = await TaskSummaryService.shared.generateCompletionMessage(fromAssistantResponse: finalAssistantResponse)
         log("📝 Completion summary: \(summary ?? "nil")")
         return summary
+    }
+
+    /// Best-effort extraction of the final assistant response text for this turn.
+    private func latestAssistantResponseText() -> String? {
+        guard let lastAssistantMessage = messages.last(where: { $0.role == .assistant })?.content else {
+            return nil
+        }
+        let cleaned = lastAssistantMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
     }
 
     // MARK: - Buffered Debug Logging
@@ -314,20 +324,23 @@ final class ChatViewModel: ChatServiceDelegate {
         let agentName = botName
         LiveActivityManager.shared.startActivity(agentName: agentName, userTask: text, subject: nil)
 
-        // Generate AI summary for every message sent
-        // Include up to the last 5 user messages to identify the overall task
-        let recentUserMessages = Array(messages
-            .filter { $0.role == .user }
-            .suffix(5)
-            .map { $0.content })
-        log("📝 Generating summary for \(recentUserMessages.count) messages: \(recentUserMessages)")
+        // Generate local task summary from ONLY the latest user message.
+        // Guard against stale async results by pinning to this run generation.
+        let runGeneration = currentRunGeneration
+        let latestUserMessage = text
+        log("📝 Generating local task summary from latest user message")
         Task {
-            let summary = await TaskSummaryService.shared.generateTitle(for: recentUserMessages)
+            let summary = await TaskSummaryService.shared.generateTitle(from: latestUserMessage)
             await MainActor.run {
-                self.log("📝 Summary result: \(summary ?? "nil")")
-                self.liveActivitySubject = summary
-                // Update the Live Activity with the generated subject
-                self.pushLiveActivityUpdate(isAISubject: true)
+                guard self.currentRunGeneration == runGeneration else {
+                    self.log("📝 Ignoring stale task summary for generation \(runGeneration)")
+                    return
+                }
+                self.log("📝 Local task summary: \(summary ?? "nil")")
+                if let summary, !summary.isEmpty {
+                    self.liveActivitySubject = summary
+                    self.pushLiveActivityUpdate(isAISubject: true)
+                }
             }
         }
 
@@ -381,15 +394,9 @@ final class ChatViewModel: ChatServiceDelegate {
                 lastCompletedActivity = currentActivity
                 currentActivity = nil
                 shimmerStartTime = nil
-                // End the Lock Screen Live Activity now that the answer is streaming
-                let taskTitle = liveActivitySubject
-                Task {
-                    let completionSummary = await generateCompletionSummary(from: taskTitle)
-                    await MainActor.run {
-                        LiveActivityManager.shared.endActivity(completionSummary: completionSummary)
-                    }
-                }
-                log("Cleared activity on first delta")
+                // Keep the Live Activity running until message.done so we can use
+                // final response text for completion summary.
+                log("Cleared activity on first delta (Live Activity remains active until done)")
             }
         }
 
@@ -416,11 +423,16 @@ final class ChatViewModel: ChatServiceDelegate {
             log("Preserved activity with \(activity.steps.count) steps")
         }
         
-        // End the Lock Screen Live Activity with completion summary
-        let taskTitle = liveActivitySubject
+        // End the Lock Screen Live Activity with completion summary.
+        // Guard against stale async completion crossing into a newer run.
+        let runGeneration = currentRunGeneration
         Task {
-            let completionSummary = await generateCompletionSummary(from: taskTitle)
+            let completionSummary = await generateCompletionSummary()
             await MainActor.run {
+                guard self.currentRunGeneration == runGeneration else {
+                    self.log("📝 Ignoring stale completion summary for generation \(runGeneration)")
+                    return
+                }
                 LiveActivityManager.shared.endActivity(completionSummary: completionSummary)
             }
         }
@@ -809,7 +821,7 @@ final class ChatViewModel: ChatServiceDelegate {
             break
         }
     }
-    
+
     /// Process individual content items from assistant messages (thinking, toolCall)
     private func processAssistantContentItem(_ contentItem: [String: Any]) {
         guard let type = contentItem["type"] as? String else {
