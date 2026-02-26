@@ -2,7 +2,7 @@
 
 > We are working on a suit of **AI-first patterns** that we believe should be common in mobile chat interfaces. We're starting with Live Activity and thinking steps; we're also planning new ways to input speech, add context and media from the keyboard, use location, and more so chat UIs feel native and transparent instead of opaque.
 
-[hello@newmaterial.co](mailto:hello@newmaterial.co) · **Website:** [newmaterial.co](https://newmaterial.co) · **Follow:** [Chowder on X](https://x.com/chowderhaus)
+[hello@newmaterial.co](mailto:hello@newmaterial.co) · **Website:** [newmaterial.co](https://newmaterial.co) · **Follow:** [Chowder on X](https://x.com/chowderhaus) **Discord:** [Chowder on Discord](https://discord.gg/6XruHYx83G)
 
 🚧 *This repo is very early work in progress. We’d love feedback and contributions, please be kind.*
 
