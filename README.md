@@ -303,6 +303,31 @@ Chowder automatically reconnects after network interruptions with a 3-second bac
 - Ensure an API key or OAuth token is configured for your model provider
 - Try sending a message from the CLI to verify the agent works: `openclaw agent --message "hello"`
 
+### "INVALID_REQUEST: missing scope: operator.write" (or `operator.read`)
+
+This usually means the gateway accepted the WebSocket connection, but the current session/token was not granted the required operator scopes for RPC methods like `chat.send` and `chat.history`.
+
+- Common after recent OpenClaw upgrades (including `v2026.2.25+`) where gateway auth/pairing checks are stricter
+- Not typically an iOS UI bug or message-format issue
+
+Fix steps on the gateway host:
+
+1. Confirm your token and gateway auth mode:
+   - `openclaw config get gateway.auth.mode`
+   - `openclaw config get gateway.auth.token`
+2. Reissue/rotate the gateway token, then update the token in Chowder Settings:
+   - `openclaw doctor --generate-gateway-token`
+3. If you use device/operator pairing, re-pair the iOS device/session after the upgrade.
+4. Restart the gateway:
+   - `openclaw gateway restart`
+5. Watch logs while reconnecting from iOS:
+   - `openclaw logs --follow`
+
+Expected result after fix:
+
+- `chat.send` no longer returns `missing scope: operator.write`
+- `chat.history` no longer returns `missing scope: operator.read`
+
 ### Header shows "Chowder" instead of the bot's name
 
 - The bot's IDENTITY.md may be empty. Tell the bot to fill it in: "Set your name to OddJob in IDENTITY.md"

@@ -40,10 +40,15 @@ final class ChatService: NSObject {
     private var activeRunId: String?
     private var historyPollTimer: Timer?
     private var historyRequestInFlight: Bool = false  // Prevent concurrent polling
+    private var pendingHistoryRequestIds: Set<String> = []
+    private var historyPollSentCount: Int = 0
+    private var historyPollAckCount: Int = 0
+    private var historyPollTimeoutCount: Int = 0
     private var seenSequenceNumbers: Set<Int> = []
     private var seenToolCallIds: Set<String> = []  // Dedupe by toolCallId
     private var seenTimestamps: Set<String> = []   // Fallback dedupe by timestamp
     private let historyPollInterval: TimeInterval = 1.0  // 1 second
+    private let historyRequestTimeout: TimeInterval = 8.0
 
     init(gatewayURL: String, token: String, sessionKey: String = "agent:main:main") {
         self.gatewayURL = gatewayURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -219,7 +224,10 @@ final class ChatService: NSObject {
         
         historyRequestInFlight = true
         let requestId = makeRequestId()
+        pendingHistoryRequestIds.insert(requestId)
+        historyPollSentCount += 1
         log("[HISTORY] 🔄 Polling chat.history")
+        logHistoryPollStatsIfNeeded(reason: "send")
         
         let frame: [String: Any] = [
             "type": "req",
@@ -240,8 +248,20 @@ final class ChatService: NSObject {
         webSocketTask?.send(.string(jsonString)) { [weak self] error in
             if let error {
                 self?.log("[HISTORY] ❌ Error: \(error.localizedDescription)")
+                self?.pendingHistoryRequestIds.remove(requestId)
                 self?.historyRequestInFlight = false
             }
+        }
+
+        // Failsafe: if the response is dropped/malformed, unblock polling.
+        DispatchQueue.main.asyncAfter(deadline: .now() + historyRequestTimeout) { [weak self] in
+            guard let self else { return }
+            guard self.pendingHistoryRequestIds.contains(requestId) else { return }
+            self.pendingHistoryRequestIds.remove(requestId)
+            self.historyRequestInFlight = false
+            self.historyPollTimeoutCount += 1
+            self.log("[HISTORY] ⚠️ Poll request timed out — unblocking next poll")
+            self.logHistoryPollStats(reason: "timeout")
         }
     }
 
@@ -256,7 +276,7 @@ final class ChatService: NSObject {
         seenToolCallIds.removeAll()
         seenTimestamps.removeAll()
         
-        log("[HISTORY] Starting poll (500ms interval)")
+        log("[HISTORY] Starting poll (\(Int(historyPollInterval * 1000))ms interval)")
         
         // Poll immediately, then every 500ms
         requestChatHistory()
@@ -282,6 +302,10 @@ final class ChatService: NSObject {
         historyPollTimer = nil
         activeRunId = nil
         historyRequestInFlight = false  // Reset in-flight flag
+        pendingHistoryRequestIds.removeAll()
+        historyPollSentCount = 0
+        historyPollAckCount = 0
+        historyPollTimeoutCount = 0
         seenSequenceNumbers.removeAll()
         seenToolCallIds.removeAll()
         seenTimestamps.removeAll()
@@ -598,6 +622,16 @@ final class ChatService: NSObject {
         let ok = json["ok"] as? Bool ?? false
         let payload = json["payload"] as? [String: Any]
         let error = json["error"] as? [String: Any]
+        let isHistoryResponse = pendingHistoryRequestIds.contains(id)
+
+        // Always clear in-flight state for any response to a pending history request,
+        // even when payload is malformed or an error is returned.
+        if isHistoryResponse {
+            pendingHistoryRequestIds.remove(id)
+            historyRequestInFlight = false
+            historyPollAckCount += 1
+            logHistoryPollStatsIfNeeded(reason: "ack")
+        }
 
         if ok {
             let payloadType = payload?["type"] as? String
@@ -665,9 +699,6 @@ final class ChatService: NSObject {
 
     /// Process history items, deduplicate, and notify delegate of new activity
     private func processHistoryItems(_ items: [[String: Any]]) {
-        // Reset request-in-flight flag to allow next poll
-        historyRequestInFlight = false
-        
         // Always forward items to delegate — they handle filtering.
         // (Previously we gated on activeRunId, but post-run fetches need to get through.)
         
@@ -852,6 +883,19 @@ final class ChatService: NSObject {
             self?.isReconnecting = false
             self?.log("[RECONNECT] Retrying now")
             self?.connect()
+        }
+    }
+
+    // MARK: - Poll Diagnostics
+
+    private func logHistoryPollStats(reason: String) {
+        log("[HISTORY] 📊 Poll stats (\(reason)) sent=\(historyPollSentCount) ack=\(historyPollAckCount) timeout=\(historyPollTimeoutCount) pending=\(pendingHistoryRequestIds.count) inFlight=\(historyRequestInFlight)")
+    }
+
+    /// Keep logs readable by emitting periodic snapshots only.
+    private func logHistoryPollStatsIfNeeded(reason: String) {
+        if historyPollSentCount % 10 == 0 || historyPollAckCount % 10 == 0 {
+            logHistoryPollStats(reason: reason)
         }
     }
 }

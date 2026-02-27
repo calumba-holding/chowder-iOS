@@ -476,6 +476,14 @@ final class ChatViewModel: ChatServiceDelegate {
 
     func chatServiceDidReceiveError(_ error: Error) {
         log("ERROR: \(error.localizedDescription)")
+
+        // Keep active runs alive across transient socket drops so reconnect can
+        // restart chat.history polling and continue long-running tasks.
+        if isLoading, Self.isTransientConnectionError(error) {
+            log("Transient connection drop during active run — waiting for reconnect")
+            return
+        }
+
         let friendlyMessage = Self.friendlyErrorMessage(for: error)
         if let lastIndex = messages.indices.last,
            messages[lastIndex].role == .assistant,
@@ -536,6 +544,37 @@ final class ChatViewModel: ChatServiceDelegate {
 
         // Fallback
         return "Something went wrong. Reconnecting..."
+    }
+
+    /// Returns true for socket/network interruptions that should auto-recover.
+    private static func isTransientConnectionError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+
+        if nsError.domain == NSPOSIXErrorDomain {
+            switch nsError.code {
+            case 53, 54, 57, 60:
+                return true
+            default:
+                return false
+            }
+        }
+
+        if nsError.domain == NSURLErrorDomain {
+            switch nsError.code {
+            case NSURLErrorNotConnectedToInternet,
+                 NSURLErrorDataNotAllowed,
+                 NSURLErrorTimedOut,
+                 NSURLErrorNetworkConnectionLost,
+                 NSURLErrorCannotFindHost,
+                 NSURLErrorCannotConnectToHost,
+                 NSURLErrorDNSLookupFailed:
+                return true
+            default:
+                return false
+            }
+        }
+
+        return false
     }
 
     func chatServiceDidLog(_ message: String) {
