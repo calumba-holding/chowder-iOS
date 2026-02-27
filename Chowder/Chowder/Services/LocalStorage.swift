@@ -148,4 +148,58 @@ enum LocalStorage {
             return UserProfile()
         }
     }
+
+    // MARK: - Location Sharing
+
+    private static var locationPreferencesURL: URL {
+        documentsURL.appendingPathComponent("location_preferences.json")
+    }
+
+    private static var locationSyncStateURL: URL {
+        documentsURL.appendingPathComponent("location_sync_state.json")
+    }
+
+    static func saveLocationPreferences(_ preferences: LocationPreferences) {
+        do {
+            let data = try JSONEncoder().encode(preferences)
+            try data.write(to: locationPreferencesURL, options: .atomic)
+        } catch {
+            print("[LocalStorage] Failed to save location preferences: \(error)")
+        }
+    }
+
+    static func loadLocationPreferences() -> LocationPreferences {
+        guard FileManager.default.fileExists(atPath: locationPreferencesURL.path) else {
+            return LocationPreferences()
+        }
+        do {
+            let data = try Data(contentsOf: locationPreferencesURL)
+            return try JSONDecoder().decode(LocationPreferences.self, from: data)
+        } catch {
+            print("[LocalStorage] Failed to load location preferences: \(error)")
+            return LocationPreferences()
+        }
+    }
+
+    static func saveLocationSyncState(_ state: LocationSyncState) {
+        do {
+            let data = try JSONEncoder().encode(state)
+            try data.write(to: locationSyncStateURL, options: .atomic)
+        } catch {
+            print("[LocalStorage] Failed to save location sync state: \(error)")
+        }
+    }
+
+    static func loadLocationSyncState() -> LocationSyncState {
+        guard FileManager.default.fileExists(atPath: locationSyncStateURL.path) else {
+            return LocationSyncState()
+        }
+        do {
+            let data = try Data(contentsOf: locationSyncStateURL)
+            return try JSONDecoder().decode(LocationSyncState.self, from: data)
+        } catch {
+            print("[LocalStorage] Failed to load location sync state: \(error)")
+            return LocationSyncState()
+        }
+    }
 }

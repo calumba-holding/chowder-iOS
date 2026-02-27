@@ -152,9 +152,19 @@ struct ChatView: View {
             SettingsView(
                 currentIdentity: viewModel.botIdentity,
                 currentProfile: viewModel.userProfile,
+                locationPreferences: viewModel.locationPreferences,
+                locationAuthorizationLabel: viewModel.locationAuthorizationLabel,
+                locationAccuracyLabel: viewModel.locationAccuracyLabel,
+                locationSyncState: viewModel.locationSyncState,
                 isConnected: viewModel.isConnected,
                 onSave: { identity, profile in
                     viewModel.saveWorkspaceData(identity: identity, profile: profile)
+                },
+                onLocationSharingChanged: { enabled in
+                    viewModel.setLocationSharingEnabled(enabled)
+                },
+                onSyncLocationNow: {
+                    viewModel.refreshCurrentLocation()
                 },
                 onSaveConnection: {
                     viewModel.reconnect()

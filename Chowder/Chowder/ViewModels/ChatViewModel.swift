@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
+import CoreLocation
 
 @Observable
-final class ChatViewModel: ChatServiceDelegate {
+final class ChatViewModel: ChatServiceDelegate, LocationServiceDelegate {
 
     var messages: [Message] = []
     var inputText: String = ""
@@ -39,6 +40,10 @@ final class ChatViewModel: ChatServiceDelegate {
     // Workspace-synced data from the gateway
     var botIdentity: BotIdentity = LocalStorage.loadBotIdentity()
     var userProfile: UserProfile = LocalStorage.loadUserProfile()
+    var locationPreferences: LocationPreferences = LocalStorage.loadLocationPreferences()
+    var locationSyncState: LocationSyncState = LocalStorage.loadLocationSyncState()
+    var locationAuthorizationLabel: String = "Not Determined"
+    var locationAccuracyLabel: String = "Unknown"
 
     /// The bot's display name — uses IDENTITY.md name, falls back to "Chowder".
     var botName: String {
@@ -69,6 +74,7 @@ final class ChatViewModel: ChatServiceDelegate {
     @ObservationIgnored private var hasReceivedAnyDelta = false
 
     private var chatService: ChatService?
+    @ObservationIgnored private let locationService = LocationService()
 
     var isConfigured: Bool {
         ConnectionConfig().isConfigured
@@ -243,6 +249,12 @@ final class ChatViewModel: ChatServiceDelegate {
         logBuffer.removeAll()
     }
 
+    init() {
+        locationService.delegate = self
+        locationService.refreshAuthorizationStatus()
+        locationService.setSharingEnabled(locationPreferences.sharingEnabled)
+    }
+
     // MARK: - Actions
 
     func connect() {
@@ -289,6 +301,10 @@ final class ChatViewModel: ChatServiceDelegate {
         log("send() — isConnected=\(isConnected) isLoading=\(isLoading)")
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isLoading else { return }
+
+        if locationPreferences.sharingEnabled && isLocationRelatedPrompt(text) {
+            locationService.requestForegroundRefresh()
+        }
 
         hasPlayedResponseHaptic = false
         hasReceivedAnyDelta = false
@@ -348,6 +364,12 @@ final class ChatViewModel: ChatServiceDelegate {
         log("chatService.send() called")
     }
 
+    private func isLocationRelatedPrompt(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let hints = ["near me", "around here", "parking", "park", "restaurant", "food", "where am i", "location", "nearby"]
+        return hints.contains { lower.contains($0) }
+    }
+
     func clearMessages() {
         messages.removeAll()
         LocalStorage.deleteMessages()
@@ -359,6 +381,7 @@ final class ChatViewModel: ChatServiceDelegate {
     func chatServiceDidConnect() {
         log("CONNECTED")
         isConnected = true
+        flushPendingLocationSync()
         
         // Workspace sync disabled - identity/profile are updated via tool events
         // when the agent writes to IDENTITY.md or USER.md
@@ -377,9 +400,10 @@ final class ChatViewModel: ChatServiceDelegate {
     }
 
     func chatServiceDidReceiveDelta(_ text: String) {
+        guard let sanitized = sanitizeDelta(text) else { return }
         guard let lastIndex = messages.indices.last,
               messages[lastIndex].role == .assistant else { return }
-        messages[lastIndex].content += text
+        messages[lastIndex].content += sanitized
         hasReceivedAnyDelta = true
 
         // Light haptic on the first streaming delta of a response
@@ -774,12 +798,13 @@ final class ChatViewModel: ChatServiceDelegate {
     /// Apply text to the assistant bubble after the run has finished.
     /// Used when a final history fetch finds a response that polling missed.
     private func applyPostRunText(_ text: String) {
+        guard let sanitized = sanitizePostRunText(text) else { return }
         if let lastIndex = self.messages.indices.last,
            self.messages[lastIndex].role == .assistant,
            self.messages[lastIndex].content.isEmpty {
-            self.messages[lastIndex].content = text
+            self.messages[lastIndex].content = sanitized
         } else if self.messages.last?.role != .assistant {
-            self.messages.append(Message(role: .assistant, content: text))
+            self.messages.append(Message(role: .assistant, content: sanitized))
         } else {
             // Bubble already has content — don't overwrite
             log("📨 Skipping post-run text (bubble already has content)")
@@ -790,6 +815,24 @@ final class ChatViewModel: ChatServiceDelegate {
             responseHaptic.impactOccurred()
         }
         LocalStorage.saveMessages(self.messages)
+    }
+
+    private func sanitizeDelta(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let upper = trimmed.uppercased()
+        if upper == "NO_REPLY" || upper == "NOREPLY" {
+            return nil
+        }
+        return text
+    }
+
+    private func sanitizePostRunText(_ text: String) -> String? {
+        let lines = text.components(separatedBy: .newlines).filter { line in
+            let token = line.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            return token != "NO_REPLY" && token != "NOREPLY" && token != "TBD"
+        }
+        let joined = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? nil : joined
     }
 
     /// Parse a single history item and update activity
@@ -1268,5 +1311,132 @@ final class ChatViewModel: ChatServiceDelegate {
         LocalStorage.saveBotIdentity(identity)
         LocalStorage.saveUserProfile(profile)
         log("Settings saved to local cache")
+    }
+
+    // MARK: - Location Sharing
+
+    func setLocationSharingEnabled(_ enabled: Bool) {
+        locationPreferences.sharingEnabled = enabled
+        LocalStorage.saveLocationPreferences(locationPreferences)
+        locationService.setSharingEnabled(enabled)
+        if enabled {
+            locationService.requestAuthorizationIfNeeded()
+            locationService.requestForegroundRefresh()
+        }
+        log("Location sharing enabled: \(enabled)")
+    }
+
+    func refreshCurrentLocation() {
+        locationService.requestForegroundRefresh()
+        log("Requested foreground location refresh")
+    }
+
+    private func persistLocationSyncState() {
+        LocalStorage.saveLocationSyncState(locationSyncState)
+    }
+
+    private func enqueueLocationSnapshot(_ snapshot: LocationSnapshot) {
+        locationSyncState.lastSnapshot = snapshot
+        locationSyncState.pendingSnapshots.append(snapshot)
+        if locationSyncState.pendingSnapshots.count > 12 {
+            locationSyncState.pendingSnapshots = Array(locationSyncState.pendingSnapshots.suffix(12))
+        }
+        persistLocationSyncState()
+    }
+
+    private func flushPendingLocationSync() {
+        guard isConnected, !locationSyncState.pendingSnapshots.isEmpty else { return }
+        let markdown = buildLocationMarkdown()
+        let instruction = """
+        Silently update LOCATION.md in the workspace with this exact markdown:
+
+        \(markdown)
+        """
+        chatService?.sendBackgroundInstruction(instruction)
+        locationSyncState.pendingSnapshots.removeAll()
+        locationSyncState.lastSyncedAt = Date()
+        locationSyncState.lastHeartbeatAt = Date()
+        persistLocationSyncState()
+        log("Synced LOCATION.md with latest snapshot")
+    }
+
+    private func buildLocationMarkdown() -> String {
+        let iso = ISO8601DateFormatter()
+        let now = Date()
+        let snapshot = locationSyncState.lastSnapshot
+
+        let lat = snapshot.map { String(format: "%.6f", $0.latitude) } ?? ""
+        let lon = snapshot.map { String(format: "%.6f", $0.longitude) } ?? ""
+        let acc = snapshot.map { String(format: "%.0f", $0.horizontalAccuracy) } ?? ""
+        let source = snapshot?.source.rawValue ?? "unknown"
+        let updated = snapshot.map { iso.string(from: $0.timestamp) } ?? iso.string(from: now)
+        let heartbeat = locationSyncState.lastHeartbeatAt.map { iso.string(from: $0) } ?? "never"
+        let staleAfter = locationPreferences.freshnessWindowMinutes
+        let place = snapshot?.placeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let street = snapshot?.street?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let locality = snapshot?.locality?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let region = snapshot?.administrativeArea?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let postal = snapshot?.postalCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let country = snapshot?.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let fullAddress = [street, locality, region, postal, country]
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+
+        return """
+        # LOCATION.md
+
+        - updatedAt: \(updated)
+        - source: \(source)
+        - staleAfterMinutes: \(staleAfter)
+        - lastHeartbeatAt: \(heartbeat)
+
+        ## Last Known Location
+
+        - latitude: \(lat)
+        - longitude: \(lon)
+        - horizontalAccuracyMeters: \(acc)
+        - placeName: \(place.isEmpty ? "Unknown" : place)
+        - street: \(street.isEmpty ? "Unknown" : street)
+        - locality: \(locality.isEmpty ? "Unknown" : locality)
+        - administrativeArea: \(region.isEmpty ? "Unknown" : region)
+        - postalCode: \(postal.isEmpty ? "Unknown" : postal)
+        - country: \(country.isEmpty ? "Unknown" : country)
+        - fullAddress: \(fullAddress.isEmpty ? "Unknown" : fullAddress)
+        """
+    }
+
+    private static func authorizationLabel(_ status: CLAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "Not Determined"
+        case .restricted: return "Restricted"
+        case .denied: return "Denied"
+        case .authorizedWhenInUse: return "When In Use"
+        case .authorizedAlways: return "Always"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    private static func accuracyLabel(_ accuracy: CLAccuracyAuthorization) -> String {
+        switch accuracy {
+        case .fullAccuracy: return "Precise"
+        case .reducedAccuracy: return "Approximate"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    // MARK: - LocationServiceDelegate
+
+    func locationServiceDidUpdateAuthorization(status: CLAuthorizationStatus, accuracy: CLAccuracyAuthorization) {
+        locationAuthorizationLabel = Self.authorizationLabel(status)
+        locationAccuracyLabel = Self.accuracyLabel(accuracy)
+    }
+
+    func locationServiceDidReceiveSnapshot(_ snapshot: LocationSnapshot) {
+        enqueueLocationSnapshot(snapshot)
+        flushPendingLocationSync()
+    }
+
+    func locationServiceDidFail(_ error: Error) {
+        log("Location service error: \(error.localizedDescription)")
     }
 }

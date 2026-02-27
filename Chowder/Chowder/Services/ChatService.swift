@@ -49,6 +49,12 @@ final class ChatService: NSObject {
     private var seenTimestamps: Set<String> = []   // Fallback dedupe by timestamp
     private let historyPollInterval: TimeInterval = 1.0  // 1 second
     private let historyRequestTimeout: TimeInterval = 8.0
+    private var pendingForegroundSendRequestIds: Set<String> = []
+    private var pendingBackgroundSendRequestIds: Set<String> = []
+    private var pendingForegroundSendStartedAt: [String: Date] = [:]
+    private var visibleRunId: String?
+    private var visibleRunStartedAt: Date?
+    private var hiddenRunIds: Set<String> = []
 
     init(gatewayURL: String, token: String, sessionKey: String = "agent:main:main") {
         self.gatewayURL = gatewayURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -176,6 +182,10 @@ final class ChatService: NSObject {
         urlSession?.invalidateAndCancel()
         urlSession = nil
         isConnected = false
+        pendingForegroundSendStartedAt.removeAll()
+        visibleRunId = nil
+        visibleRunStartedAt = nil
+        hiddenRunIds.removeAll()
     }
 
     // MARK: - Sending Messages
@@ -188,6 +198,8 @@ final class ChatService: NSObject {
 
         let requestId = makeRequestId()
         let idempotencyKey = UUID().uuidString
+        pendingForegroundSendRequestIds.insert(requestId)
+        pendingForegroundSendStartedAt[requestId] = Date()
         let frame: [String: Any] = [
             "type": "req",
             "id": requestId,
@@ -212,6 +224,42 @@ final class ChatService: NSObject {
                 }
             } else {
                 self?.log("[SEND] ✅ chat.send sent OK")
+            }
+        }
+    }
+
+    /// Send a non-user-visible instruction to the agent.
+    /// Uses `deliver:false` so this request does not appear as a user chat bubble.
+    func sendBackgroundInstruction(_ text: String) {
+        guard isConnected else {
+            log("[SEND] ⚠️ Not connected — dropping background instruction")
+            return
+        }
+
+        let requestId = makeRequestId()
+        let idempotencyKey = UUID().uuidString
+        pendingBackgroundSendRequestIds.insert(requestId)
+        let frame: [String: Any] = [
+            "type": "req",
+            "id": requestId,
+            "method": "chat.send",
+            "params": [
+                "message": text,
+                "sessionKey": sessionKey,
+                "idempotencyKey": idempotencyKey,
+                "deliver": false
+            ]
+        ]
+
+        guard let data = try? JSONSerialization.data(withJSONObject: frame),
+              let jsonString = String(data: data, encoding: .utf8) else { return }
+
+        log("[SEND] Sending background chat.send id=\(requestId) (\(text.count) chars)")
+        webSocketTask?.send(.string(jsonString)) { [weak self] error in
+            if let error {
+                self?.log("[SEND] ❌ Background send error: \(error.localizedDescription)")
+            } else {
+                self?.log("[SEND] ✅ background chat.send sent OK")
             }
         }
     }
@@ -459,6 +507,7 @@ final class ChatService: NSObject {
     private func handleEvent(_ json: [String: Any]) {
         let event = json["event"] as? String ?? "unknown"
         let payload = json["payload"] as? [String: Any]
+        let eventRunId = extractRunId(from: payload)
 
         // connect.challenge must be handled immediately (not on main queue)
         if event == "connect.challenge" {
@@ -502,6 +551,14 @@ final class ChatService: NSObject {
             // payload.stream = "assistant" | "lifecycle" | "tool" | "thinking" | ...
             // For "assistant": data.delta = incremental text, data.text = cumulative text
             case "agent":
+                if let eventRunId {
+                    if hiddenRunIds.contains(eventRunId) {
+                        return
+                    }
+                    if let visibleRunId, eventRunId != visibleRunId {
+                        return
+                    }
+                }
                 let stream = payload?["stream"] as? String
                 let agentData = payload?["data"] as? [String: Any]
                 switch stream {
@@ -635,6 +692,21 @@ final class ChatService: NSObject {
 
         if ok {
             let payloadType = payload?["type"] as? String
+            let runId = extractRunId(from: payload)
+
+            if let runId {
+                if pendingBackgroundSendRequestIds.contains(id) {
+                    hiddenRunIds.insert(runId)
+                    log("[RUN] Marked hidden runId=\(runId)")
+                } else if pendingForegroundSendRequestIds.contains(id) {
+                    visibleRunId = runId
+                    visibleRunStartedAt = pendingForegroundSendStartedAt[id] ?? Date()
+                    log("[RUN] Marked visible runId=\(runId)")
+                }
+            }
+            pendingBackgroundSendRequestIds.remove(id)
+            pendingForegroundSendRequestIds.remove(id)
+            pendingForegroundSendStartedAt.removeValue(forKey: id)
 
             if payloadType == "hello-ok" {
                 let proto = payload?["protocol"] as? Int ?? 0
@@ -721,6 +793,15 @@ final class ChatService: NSObject {
             let itemRole = item["role"] as? String ?? "?"
             let itemSeq = item["seq"] as? Int
             let itemToolCallId = item["toolCallId"] as? String
+            let itemRunId = item["runId"] as? String
+
+            if let itemRunId, hiddenRunIds.contains(itemRunId) {
+                continue
+            }
+
+            if let visibleRunId, activeRunId != nil, let itemRunId, itemRunId != visibleRunId {
+                continue
+            }
             
             // Timestamp might be String or Number - try both
             var timestampStr: String? = nil
@@ -730,6 +811,17 @@ final class ChatService: NSObject {
                 timestampStr = String(ts)
             } else if let ts = item["timestamp"] as? Int {
                 timestampStr = String(ts)
+            }
+
+            // Some history items omit runId. During an active visible run, filter
+            // out rows that clearly predate the current foreground send.
+            if activeRunId != nil, itemRunId == nil, visibleRunId != nil,
+               let visibleRunStartedAt,
+               let timestampMs = item["timestamp"] as? Double {
+                let itemDate = Date(timeIntervalSince1970: timestampMs / 1000.0)
+                if itemDate < visibleRunStartedAt.addingTimeInterval(-2) {
+                    continue
+                }
             }
             
             // For assistant messages, use content hash for deduplication
@@ -797,6 +889,16 @@ final class ChatService: NSObject {
         } else {
             log("[HISTORY] No new items to send")
         }
+    }
+
+    private func extractRunId(from payload: [String: Any]?) -> String? {
+        if let runId = payload?["runId"] as? String, !runId.isEmpty { return runId }
+        if let runId = payload?["runID"] as? String, !runId.isEmpty { return runId }
+        if let data = payload?["data"] as? [String: Any] {
+            if let runId = data["runId"] as? String, !runId.isEmpty { return runId }
+            if let runId = data["runID"] as? String, !runId.isEmpty { return runId }
+        }
+        return nil
     }
 
     // MARK: - Private: Text Extraction

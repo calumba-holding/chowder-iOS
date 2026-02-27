@@ -8,8 +8,14 @@ struct SettingsView: View {
 
     var currentIdentity: BotIdentity = BotIdentity()
     var currentProfile: UserProfile = UserProfile()
+    var locationPreferences: LocationPreferences = LocationPreferences()
+    var locationAuthorizationLabel: String = "Not Determined"
+    var locationAccuracyLabel: String = "Unknown"
+    var locationSyncState: LocationSyncState = LocationSyncState()
     var isConnected: Bool = false
     var onSave: ((BotIdentity, UserProfile) -> Void)?
+    var onLocationSharingChanged: ((Bool) -> Void)?
+    var onSyncLocationNow: (() -> Void)?
     var onSaveConnection: (() -> Void)?
     var onClearHistory: (() -> Void)?
 
@@ -100,6 +106,12 @@ struct SettingsView: View {
                     NavigationLink {
                         UserDetailView(
                             currentProfile: currentProfile,
+                            locationPreferences: locationPreferences,
+                            locationAuthorizationLabel: locationAuthorizationLabel,
+                            locationAccuracyLabel: locationAccuracyLabel,
+                            locationSyncState: locationSyncState,
+                            onLocationSharingChanged: onLocationSharingChanged,
+                            onSyncLocationNow: onSyncLocationNow,
                             onSave: { profile in
                                 onSave?(currentIdentity, profile)
                             }
@@ -575,6 +587,12 @@ struct UserDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     var currentProfile: UserProfile = UserProfile()
+    var locationPreferences: LocationPreferences = LocationPreferences()
+    var locationAuthorizationLabel: String = "Not Determined"
+    var locationAccuracyLabel: String = "Unknown"
+    var locationSyncState: LocationSyncState = LocationSyncState()
+    var onLocationSharingChanged: ((Bool) -> Void)?
+    var onSyncLocationNow: (() -> Void)?
     var onSave: ((UserProfile) -> Void)?
 
     @State private var userName: String = ""
@@ -583,6 +601,7 @@ struct UserDetailView: View {
     @State private var userTimezone: String = ""
     @State private var userNotes: String = ""
     @State private var userContext: String = ""
+    @State private var shareLocation: Bool = false
 
     var body: some View {
         ScrollView {
@@ -650,6 +669,95 @@ struct UserDetailView: View {
                         .padding(.horizontal, 4)
                 }
 
+                // Location
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Location")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 4)
+
+                    GlassCard(padding: 0) {
+                        VStack(spacing: 0) {
+                            Toggle(isOn: $shareLocation) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Share Location with OpenClaw")
+                                        .font(.system(size: 16))
+                                    Text("Updates LOCATION.md with visits and significant changes")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 13)
+                            .onChange(of: shareLocation) { _, value in
+                                onLocationSharingChanged?(value)
+                            }
+
+                            GlassDivider()
+
+                            VStack(spacing: 10) {
+                                HStack {
+                                    Text("Authorization")
+                                        .font(.system(size: 15))
+                                    Spacer()
+                                    Text(locationAuthorizationLabel)
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                HStack {
+                                    Text("Accuracy")
+                                        .font(.system(size: 15))
+                                    Spacer()
+                                    Text(locationAccuracyLabel)
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                HStack {
+                                    Text("Last Updated")
+                                        .font(.system(size: 15))
+                                    Spacer()
+                                    Text(formattedLocationDate(locationSyncState.lastSnapshot?.timestamp))
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Current Address")
+                                        .font(.system(size: 15))
+                                    Text(currentAddressPreview())
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.leading)
+                                }
+
+                                Button {
+                                    onSyncLocationNow?()
+                                } label: {
+                                    HStack {
+                                        Text("Sync Location Now")
+                                            .font(.system(size: 15, weight: .medium))
+                                        Spacer()
+                                        Image(systemName: "arrow.clockwise")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!shareLocation)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 13)
+                        }
+                    }
+
+                    Text("Chowder keeps a last known location with freshness metadata in LOCATION.md.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                }
+
                 // Save button
                 GlassSaveButton {
                     let profile = UserProfile(
@@ -677,7 +785,34 @@ struct UserDetailView: View {
             userTimezone = currentProfile.timezone
             userNotes = currentProfile.notes
             userContext = currentProfile.context
+            shareLocation = locationPreferences.sharingEnabled
         }
+    }
+
+    private func formattedLocationDate(_ date: Date?) -> String {
+        guard let date else { return "Never" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func currentAddressPreview() -> String {
+        guard let snapshot = locationSyncState.lastSnapshot else { return "Unknown" }
+        let parts = [
+            snapshot.street,
+            snapshot.locality,
+            snapshot.administrativeArea,
+            snapshot.postalCode,
+            snapshot.country
+        ]
+            .compactMap { $0 }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !parts.isEmpty {
+            return parts.joined(separator: ", ")
+        }
+        if let place = snapshot.placeName?.trimmingCharacters(in: .whitespacesAndNewlines), !place.isEmpty {
+            return place
+        }
+        return "Unknown"
     }
 }
 
